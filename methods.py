@@ -56,7 +56,7 @@ def entropy(data, model, subset, act_func, args):
     
 def entropy_w_clustering(data, df, model, subset, act_func, args):
     model.eval()
-    n = 5000
+    n = 2000
     entropies = torch.empty(n)
     ind = torch.arange(n)
     top_e = torch.empty(args.inc)
