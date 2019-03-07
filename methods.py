@@ -54,16 +54,57 @@ def entropy(data, model, subset, act_func, args):
     if args.hist: return subset, args.inc, total_entropy, hist
     else: return subset, len(subset), total_entropy 
     
-def entropy_w_cluster(data, model, subset, act_func, args):
+def entropy_w_clustering(data, df, model, subset, act_func, args):
+    model.eval()
+    n = 5000
+    entropies = torch.empty(n)
+    ind = torch.arange(n)
+    top_e = torch.empty(args.inc)
+    top_ind = torch.empty(args.inc)
+    if args.cuda: entropies, ind, top_e, top_ind = entropies.cuda(), ind.cuda(), top_e.cuda(), top_ind.cuda()
+    text_field = data.fields['text']
+    
+    for i, example in enumerate(data):
+        #print(i)
+        logit = helpers.get_output(example, text_field, model, args)
+        if args.cuda: logit = logit.cuda()
+        logPy = act_func(logit)
+        if args.cuda: logPy = logPy.cuda()
+        entropy = -(logPy*torch.exp(logPy)).sum()
+        if args.cuda: entropy = entropy.cuda()
+        
+        if i < n:
+            entropies[i] = entropy
+        elif entropy > torch.min(entropies):
+            min_, idx = torch.min(entropies, dim=0)
+            entropies[int(idx)] = entropy
+            ind[int(idx)] = i
+            
+        
+    kmeans = helpers.clustering(df, args)
+    sort_e, sort_ind = entropies.sort(0,True)
+    for i in range(args.inc):
+        for j in range(n):
+            if kmeans[ind[sort_ind[j]]] == i:
+                top_e[i] = sort_e[sort_ind[j]]
+                top_ind[i] = ind[sort_ind[j]]
+                
+    for i in range(args.inc):
+        subset.append(int(top_ind[i]))
+                
+    return subset, len(subset), top_e.sum()
+    
+    
+def entropy_w_cluster(data, df, model, subset, act_func, args):
     model.eval()
     entropy = torch.empty(len(data))
     top_e = torch.empty(args.inc)
     if args.cuda: entropy, act_func, top_e = entropy.cuda(), act_func.cuda(), top_e.cuda()
     text_field = data.fields['text']
-    kmeans = helpers.clustering(data, text_field, args)
+    kmeans = helpers.clustering(df, args)
     
     for i, example in enumerate(data):
-        #print(i)
+        print(i)
         logit = helpers.get_output(example, text_field, model, args)
         if args.cuda: logit = logit.cuda()
         logPy = act_func(logit)

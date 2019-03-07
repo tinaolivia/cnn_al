@@ -12,6 +12,7 @@ import csv
 import sys
 import data_loaders
 
+
 csv.field_size_limit(sys.maxsize)
 
 
@@ -67,22 +68,22 @@ label_field = data.Field(sequential=False)
 # load data
 if args.dataset == 'twitter':
     print('\nLoading Twitter data ...')
-    train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.twitter(text_field, label_field, args, 
+    train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.twitter('data', text_field, label_field, args, 
                                                                                          device=torch.device('cpu'), repeat=False)
     
 elif args.dataset == 'news':
     print('\nLoading 20 Newsgroup data ...')
-    train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.news(text_field, label_field, args, 
+    train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.news('data', text_field, label_field, args, 
                                                                                       device=torch.device('cpu'), repeat=False)
     
 elif args.dataset == 'imdb':
     print('\nLoading IMDB movie review data ...')
-    train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.imdb(text_field, label_field, args, 
+    train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.imdb('data/imdb', text_field, label_field, args, 
                                                                                       device=torch.device('cpu'), repeat=False)
     
 elif args.dataset == 'ag':
     print('\nloading AG News data ...')
-    train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.ag(text_field, label_field, args, 
+    train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.ag('data/ag', text_field, label_field, args, 
                                                                                     device=torch.device('cpu'), repeat=False)
     
 else: 
@@ -98,6 +99,7 @@ args.kernel_sizes = [int(k) for k in args.kernel_sizes.split(',')]
 if args.method is not None: args.save_dir = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
 else: args.save_dir = os.path.join(args.save_dir, datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
 args.result_path = os.path.join(args.result_path, datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+if not os.path.isdir(args.result_path): os.makedirs(args.result_path)
 if args.randomness < 0: args.randomness = 0
 if args.randomness > 1: args.randomness /= 100
 
@@ -125,7 +127,7 @@ for avg_iter in range(args.num_avg):
     elif args.test:
         train.evaluate(test_iter, cnn, args)
     elif args.method is not None:
-        train_al.train_with_al(train_set,val_set,test_set,cnn, avg_iter, args)
+        train_al.train_with_al(train_set,val_set,test_set,cnn, text_field, label_field, avg_iter, args)
     else:
         print()
         try:

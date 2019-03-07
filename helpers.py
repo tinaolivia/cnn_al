@@ -5,6 +5,7 @@ import torch.autograd as autograd
 import torchtext
 import torchtext.data as data
 import sys
+import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
 
@@ -38,7 +39,7 @@ def get_output(data, text_field, model, args):
 
     return logit
 
-
+'''
 def update_datasets(train, test, subset, args):
     fields = train.fields
     test = list(test)
@@ -48,30 +49,22 @@ def update_datasets(train, test, subset, args):
         if not (i in subset): new_test.append(test[i])
         else: new_train.append(test[i])
     return data.Dataset(new_train,fields), data.Dataset(new_test,fields)
-
 '''
-def clustering(data, text_field, args):
-    data = data.text
-    features = []
-    for example in data:
-        feature = [text_field.vocab.stoi[x] for x in example]
-        features.append(feature)
-    kmeans = KMeans(n_clusters=args.inc).fit_predict(features)
-    kmeans = torch.tensor(kmeans)
-    #features = [[text_field.vocab.stoi[x] for x in data[i].text for i in range(len(data))]]
-    #kmeans = torch.tensor(KMeans(n_clusters=args.inc).fit_predict(features))
-    #vec = TfidfVectorizer(lowercase=False, preprocessor=None, tokenizer=None, stop_words='english')
-    #data = [data[i].text for i in range(len(data))]
-    #data = vec.fit_transform(data)
-    #kmeans = torch.tensor(KMeans(n_clusters=args.inc).fit_predict(data))
-    if args.cuda: kmeans = kmeans.cuda()
-    return kmeans
-    '''
+
+def update_datasets(path, train_df, test_df, subset, args):
+    train_df.append(test_df.iloc[subset])
+    test_df.drop(subset)
+    train_df.to_csv('{}/train.csv'.format(path), index=False, header=False)
+    test_df.to_csv('{}/test.csv'.format(path), index=False, header=False)
     
-def clustering(data, text_field, args):
-    data = data.text
+    
+def clustering(data, args):
+    '''
+        input:
+        data: dataframe column containing text
+    '''
     vectorizer = TfidfVectorizer(stop_words='english')
-    X = vectorizer.fit(data)
+    X = vectorizer.fit_transform(data)
     kmeans = KMeans(n_clusters=args.inc).fit_predict(X)
     kmeans = torch.tensor(kmeans)
     if args.cuda: kmeans = kmeans.cuda()

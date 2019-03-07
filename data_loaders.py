@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 import torchtext.data as data
 
-def twitter(text_field, label_field, args, **kargs):
+def twitter(path, text_field, label_field, args, **kargs):
     datafields = [("text", text_field), ("label", label_field)]
-    trn, val, tst = data.TabularDataset.splits(path='data', train='train.csv', validation='val.csv',test='test.csv',
+    trn, val, tst = data.TabularDataset.splits(path=path, train='train.csv', validation='val.csv',test='test.csv',
                                                format='csv', fields=datafields)
     
     text_field.build_vocab(trn)
@@ -16,9 +16,9 @@ def twitter(text_field, label_field, args, **kargs):
     
     return trn, train_iter, val, val_iter, tst, test_iter
 
-def news(text_field, label_field, args, **kargs):
+def news(path, text_field, label_field, args, **kargs):
     datafields = [("text", text_field),("label", label_field)]
-    trn, val, tst = data.TabularDataset.splits(path='data', train='news_train.csv', validation='news_val.csv',
+    trn, val, tst = data.TabularDataset.splits(path=path, train='news_train.csv', validation='news_val.csv',
                                                test='news_test.csv', format='csv', fields=datafields)
     
     text_field.build_vocab(trn)
@@ -30,9 +30,9 @@ def news(text_field, label_field, args, **kargs):
     
     return trn, train_iter, val, val_iter, tst, test_iter
 
-def imdb(text_field, label_field, args, **kargs):
+def imdb(path, text_field, label_field, args, **kargs):
     datafields = [("text",text_field),("label",label_field)]
-    trn, val, tst = data.TabularDataset.splits(path='data/imdb', train='train.csv', validation='val.csv', 
+    trn, val, tst = data.TabularDataset.splits(path=path, train='train.csv', validation='val.csv', 
                                                test='test.csv', format='csv', fields=datafields)
     
     text_field.build_vocab(trn)
@@ -44,9 +44,9 @@ def imdb(text_field, label_field, args, **kargs):
     
     return trn, train_iter, val, val_iter, tst, test_iter
 
-def ag(text_field, label_field, args, **kargs):
+def ag(path, text_field, label_field, args, **kargs):
     datafields = [("text",text_field), ("label",label_field)]
-    trn, val, tst = data.TabularDataset.splits(path='data/ag', train='train.csv', validation='val.csv', 
+    trn, val, tst = data.TabularDataset.splits(path=path, train='train.csv', validation='val.csv', 
                                                test='test.csv', format='csv', fields=datafields)
     
     text_field.build_vocab(trn)

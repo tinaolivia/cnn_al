@@ -10,6 +10,8 @@ import torchtext.data as data
 import methods
 import helpers
 import csv
+import pandas as pd
+import data_loaders
 
 
 def train(train_iter, dev_iter, model, round_, args):
@@ -61,37 +63,26 @@ def train(train_iter, dev_iter, model, round_, args):
     save(model, save_dir=os.path.join(args.method,args.save_dir), save_prefix='al', steps=steps, round_=round_, args=args, al=True)
                 
 
-def train_with_al(train_set, val_set, test_set, model, avg_iter, args):
+def train_with_al(train_set, val_set, test_set, model, text_field, label_field, avg_iter, args):
     
     log_softmax = nn.LogSoftmax(dim=1)
     softmax = nn.Softmax(dim=1)
     if args.cuda: log_softmax = log_softmax.cuda()
-    val_iter = data.BucketIterator(test_set, batch_size=args.batch_size, device=-1, repeat=False)
+    val_iter = data.BucketIterator(val_set, batch_size=args.batch_size, device=-1, repeat=False)
+    train_df = pd.read_csv('data/{}/train.csv'.format(args.dataset), header=None, names=['text', 'label'])
+    test_df = pd.read_csv('data/{}/test.csv'.format(args.dataset), header=None, names=['text', 'label'])
     
     initial_acc, initial_loss = evaluate(val_iter, model, args)
     initial_acc = initial_acc.cpu()
     
-    if args.hist:
-        with open('histogram/{}_{}.csv'.format(args.method,args.dataset), mode='w') as csvfile:
-            csvwriter = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL) 
-            csvwriter.writerow(['Uncertainty Histograms'])
-    else:        
-        if args.test_inc: 
-            with open('accuracies/{}_{}_{}inc.csv'.format(args.method, args.dataset, args.inc), mode='w') as csvfile:
-                csvwriter = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-                csvwriter.writerow(['Train Size', 'Accuracy', 'Loss'])
-                csvwriter.writerow([len(train_set) , initial_acc.numpy(), initial_loss])
-        elif args.test_preds: 
-            with open('accuracies/{}_{}_{}preds.csv'.format(args.method, args.dataset, args.num_preds), mode='w') as csvfile:
-                csvwriter = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-                csvwriter.writerow(['Train Size', 'Accuracy', 'Loss'])
-                csvwriter.writerow([len(train_set) , initial_acc.numpy(), initial_loss])
-        else:
-            with open('accuracies/{}_{}_{}.csv'.format(args.method, args.dataset, avg_iter), mode='w') as csvfile:
-                csvwriter = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-                csvwriter.writerow(['Train Size', 'Accuracy'])
-                csvwriter.writerow([len(train_set) , initial_acc.numpy()])
-            
+    filename = os.path.join(args.result_path, '{}_{}_{}.csv'.format(args.method, args.dataset, avg_iter))
+    data_path = 'data/{}/{}'.format(args.dataset, args.method)
+    if not os.path.isdir(data_path): os.makedirs(data_path)
+    
+    with open(filename, mode='w') as csvfile:
+        csvwriter = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        csvwriter.writerow(['Train Size', 'Loss', 'Accuracy'])
+        csvwriter.writerow([len(train_set),initial_loss, initial_acc.numpy()])
     
     
     al_iter = 0
@@ -110,7 +101,7 @@ def train_with_al(train_set, val_set, test_set, model, avg_iter, args):
             
         if args.method == 'entropy':
             if args.hist: subset, n, total_entropy, hist = methods.entropy(test_set, model, subset, log_softmax, args)
-            elif args.cluster: subset, n, total_entropy = methods.entropy_w_cluster(test_set, model, subset, log_softmax, args)  
+            elif args.cluster: subset, n, total_entropy = methods.entropy_w_clustering(test_set, test_df['text'], model, subset, log_softmax, args)  
             else: subset, n, total_entropy = methods.entropy(test_set, model, subset, log_softmax, args)                
             print('\nIter {}, selected {} by entropy uncertainty, total entropy {}\n'.format(al_iter, n, total_entropy))
         
@@ -137,11 +128,13 @@ def train_with_al(train_set, val_set, test_set, model, avg_iter, args):
         
         print('\nSubset: {}'.format(subset))
         print('\nUpdating datasets ...')
-        train_set, test_set = helpers.update_datasets(train_set, test_set, subset, args)
+        helpers.update_datasets(data_path, train_df, test_df, subset, args)
+        train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.imdb(data_path, text_field, label_field, args, 
+                                                                                          device=torch.device('cpu'), repeat=False)
         
         print('\nTrain: {}, Validation: {}, Test: {} \n'.format(len(train_set),len(val_set), len(test_set)))
         
-        train_iter = data.BucketIterator(train_set, batch_size=args.batch_size, device=-1, repeat=False)
+        #train_iter = data.BucketIterator(train_set, batch_size=args.batch_size, device=-1, repeat=False)
         
         print('\nLoading initial model for dataset {} ...'.format(args.dataset))
         model.load_state_dict(torch.load(args.snapshot))
@@ -155,27 +148,14 @@ def train_with_al(train_set, val_set, test_set, model, avg_iter, args):
         acc, loss = evaluate(val_iter, model, args)
         acc = acc.cpu()
         
-        if args.hist:
-            hist = hist.cpu()
-            with open('histogram/{}_{}.csv'.format(args.method,args.dataset), mode='a') as csvfile:
-                csvwriter = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL) 
-                csvwriter.writerow([hist.numpy()])
-        
-        else:
-            if args.test_inc: 
-                with open('accuracies/{}_{}_{}inc.csv'.format(args.method,args.dataset, args.inc), mode='a') as csvfile:
-                    csvwriter = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-                    csvwriter.writerow([len(train_set), acc.numpy(), loss])
-            elif args.test_preds:
-                with open('accuracies/{}_{}_{}preds.csv'.format(args.method,args.dataset, args.num_preds), mode='a') as csvfile:
-                    csvwriter = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-                    csvwriter.writerow([len(train_set), acc.numpy(), loss])
-            else: 
-                with open('accuracies/{}_{}_{}.csv'.format(args.method,args.dataset, avg_iter), mode='a') as csvfile:
-                    csvwriter = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
-                    csvwriter.writerow([len(train_set), acc.numpy()])
+
+        with open(filename, mode='a') as csvfile:
+            csvwriter = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            csvwriter.writerow([len(train_set), loss, acc.numpy()])
+            
+        train_df = pd.read_csv('{}/train.csv'.format(data_path), header=None, names=['text', 'label'])
+        test_df = pd.read_csv('{}/test.csv'.format(data_path), header=None, names=['text', 'label'])
                 
-        
 
         al_iter += 1
         
