@@ -136,8 +136,11 @@ def train_with_al(train_set, val_set, test_set, model, text_field, label_field, 
         
         #train_iter = data.BucketIterator(train_set, batch_size=args.batch_size, device=-1, repeat=False)
         
-        print('\nLoading initial model for dataset {} ...'.format(args.dataset))
-        model.load_state_dict(torch.load(args.snapshot))
+        print('\nLoading untrained model for dataset {} ...'.format(args.dataset))
+        #model.load_state_dict(torch.load(args.snapshot))
+        model.load_state_dict(torch.load('snapshot/{}_untrained.pt'.format(args.dataset), map_location='cpu'))
+        if args.cuda: cnn = cnn.cuda()
+        
         
         print('\nTraining new model ...')
         train(train_iter, val_iter, model, al_iter, args)

@@ -40,7 +40,7 @@ parser.add_argument('-kernel-num', type=int, default=100, help='number of each k
 parser.add_argument('-kernel-sizes', type=str, default='3,4,5', help='comma-separated kernel size to use for convolution')
 parser.add_argument('-static', action='store_true', default=False, help='fix the embedding')
 # device
-parser.add_argument('-device', type=int, default=-1, help='device to use for iterate data, -1 mean cpu [default: -1]')
+parser.add_argument('-device', type=int, default=0, help='device to use for iterate data, -1 mean cpu [default: -1]') #changed from int and -1 to str and cpu
 parser.add_argument('-no-cuda', action='store_true', default=False, help='disable the gpu')
 # option
 parser.add_argument('-snapshot', type=str, default=None, help='filename of model snapshot [default: None]')
@@ -112,6 +112,7 @@ for avg_iter in range(args.num_avg):
 # model
     print('\nDefining model ...')
     cnn = model.CNN_Text(args)
+    torch.save(cnn, 'snapshot/{}_untrained.pt'.format(args.dataset))
     if args.snapshot is not None:
         print('\nLoading model from {}...'.format(args.snapshot))
         cnn.load_state_dict(torch.load(args.snapshot,map_location='cpu'))
