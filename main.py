@@ -4,13 +4,14 @@ import argparse
 import datetime
 import torch
 import torchtext.data as data
-import torchtext.datasets as datasets
-import model
-import train
-import train_al
 import csv
 import sys
+import pandas as pd
+
+import model
 import data_loaders
+import helpers
+import train
 
 
 csv.field_size_limit(sys.maxsize)
@@ -32,6 +33,7 @@ parser.add_argument('-result-path', type=str, default='results', help='where to 
 # data 
 parser.add_argument('-shuffle', action='store_true', default=False, help='shuffle the data every epoch')
 parser.add_argument('-dataset', type=str, default='twitter', choices=['twitter', 'news', 'imdb', 'ag'], help='dataset [default: twitter]')
+parser.add_argument('-data-path', type=str, default='data', help='path to where data is stored [default: data]')
 # model
 parser.add_argument('-dropout', type=float, default=0.5, help='the probability for dropout [default: 0.5]')
 parser.add_argument('-max-norm', type=float, default=3.0, help='l2 constraint of parameters [default: 3.0]')
@@ -44,8 +46,6 @@ parser.add_argument('-device', type=int, default=0, help='device to use for iter
 parser.add_argument('-no-cuda', action='store_true', default=False, help='disable the gpu')
 # option
 parser.add_argument('-snapshot', type=str, default=None, help='filename of model snapshot [default: None]')
-parser.add_argument('-predict', type=str, default=None, help='predict the sentence given')
-parser.add_argument('-test', action='store_true', default=False, help='train or test')
 # active learning 
 parser.add_argument('-method', type=str, default=None, choices=['random','entropy','vote', 'dropout'],
                     help='active learning query strategy [default: None]')
@@ -60,80 +60,86 @@ parser.add_argument('-hist', type=bool, default=False, help='whether to make a u
 parser.add_argument('-cluster', type=bool, default=False, help='whether to cluster the data or not [default:False]')
 parser.add_argument('-randomness', type=float, default=0.05, help='percentage of randomness when selecting instances [default: 0.05]')
 args = parser.parse_args()
-    
-# defining text and label fields
-text_field = data.Field(lower=True)
-label_field = data.Field(sequential=False)
 
-# load data
-if args.dataset == 'twitter':
-    print('\nLoading Twitter data ...')
-    train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.twitter('data', text_field, label_field, args, 
-                                                                                         device=torch.device('cpu'), repeat=False)
-    
-elif args.dataset == 'news':
-    print('\nLoading 20 Newsgroup data ...')
-    train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.news('data', text_field, label_field, args, 
-                                                                                      device=torch.device('cpu'), repeat=False)
-    
-elif args.dataset == 'imdb':
-    print('\nLoading IMDB movie review data ...')
-    train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.imdb('data/imdb', text_field, label_field, args, 
-                                                                                      device=torch.device('cpu'), repeat=False)
-    
-elif args.dataset == 'ag':
-    print('\nloading AG News data ...')
-    train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.ag('data/ag', text_field, label_field, args, 
-                                                                                    device=torch.device('cpu'), repeat=False)
-    
-else: 
-    print('\nDataset is not defined.')
-    sys.exit()
-
-
-# update args and print
-args.embed_num = len(text_field.vocab)
-args.class_num = len(label_field.vocab) - 1
+# defining additional arguments
+args.now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+args.datapath = os.path.join(args.data_path, args.dataset)
+if not os.path.isdir(args.datapath): os.makedirs(args.datapath)
 args.cuda = (not args.no_cuda) and torch.cuda.is_available(); del args.no_cuda
 args.kernel_sizes = [int(k) for k in args.kernel_sizes.split(',')]
-if args.method is not None: args.save_dir = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-else: args.save_dir = os.path.join(args.save_dir, datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
-args.result_path = os.path.join(args.result_path, datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
+if args.method is not None: args.save_dir = os.path.join(args.method, args.now)
+else: args.save_dir = os.path.join(args.save_dir, args.now)
+args.result_path = os.path.join(args.result_path, args.now)
 if not os.path.isdir(args.result_path): os.makedirs(args.result_path)
 if args.randomness < 0: args.randomness = 0
-if args.randomness > 1: args.randomness /= 100
+elif args.randomness > 1: args.randomness /= 100
 
-print("\nParameters:")
-for attr, value in sorted(args.__dict__.items()):
-    print("\t{}={}".format(attr.upper(), value))
+# creating new path for later
+os.makedirs(os.path.join(args.datapath, args.now))
+
+# copying validation set to new path
+val_df = pd.read_csv('{}/val.csv'.format(args.datapath), header=None, names=['text', 'label'])
+val_df.to_csv('{}/{}/val.csv'.format(args.datapath, args.now), header=False, index=False)
 
 for avg_iter in range(args.num_avg):
     
-# model
-    print('\nDefining model ...')
-    cnn = model.CNN_Text(args)
-    torch.save(cnn, 'snapshot/{}_untrained.pt'.format(args.dataset))
-    if args.snapshot is not None:
-        print('\nLoading model from {}...'.format(args.snapshot))
-        cnn.load_state_dict(torch.load(args.snapshot,map_location='cpu'))
-
-    if args.cuda:
-        torch.cuda.set_device(args.device)
-        cnn = cnn.cuda()
+    print('\nRun {}\n'.format(avg_iter))
     
-# train, test, or predict
-    if args.predict is not None:
-        label = train.predict(args.predict, cnn, text_field, label_field, args.cuda)
-        print('\n[Text]  {}\n[Label] {}\n'.format(args.predict, label))
-    elif args.test:
-        train.evaluate(test_iter, cnn, args)
-    elif args.method is not None:
-        train_al.train_with_al(train_set,val_set,test_set,cnn, text_field, label_field, avg_iter, args)
-    else:
-        print()
-        try:
-            train.train(train_iter, val_iter, cnn, args)
-        except KeyboardInterrupt:
-            print('\n' + '-' * 89)
-            print('Exiting from training early')
+    filename = os.path.join(args.result_path, '{}_{}_{}.csv'.format(args.method, args.dataset, avg_iter))
+    helpers.write_result(filename, 'w', ['Train Size', 'loss', 'accuracy'], args)
+    
+    for al_iter in range(args.rounds):
+    
+        # defining text and label fields
+        text_field = data.Field(lower=True)
+        label_field = data.Field(sequential=False)
 
+        # load data
+        if args.dataset == 'imdb':
+            print('\nLoading IMDB movie review data ...')
+            train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.imdb(args.datapath, text_field, label_field, args, 
+                                                                                              device=torch.device('cpu'), repeat=False)
+            train_df = pd.read_csv('{}/train.csv'.format(args.datapath), header=None, names=['text', 'label'])
+            test_df = pd.read_csv('{}/test.csv'.format(args.datapath), header=None, names=['text', 'label'])
+
+        elif args.dataset == 'ag':
+            print('\nloading AG News data ...')
+            train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.ag(args.datapath, text_field, label_field, args, 
+                                                                                            device=torch.device('cpu'), repeat=False)  
+        else: 
+            print('\nDataset is not defined.')
+            sys.exit()
+
+        # update args and print
+        args.embed_num = len(text_field.vocab)
+        args.class_num = len(label_field.vocab) - 1
+        args.datapath = os.path.join(args.data_path, args.dataset, args.now) #updated dataset in new folder
+
+
+        print("\nParameters:")
+        for attr, value in sorted(args.__dict__.items()):
+            print("\t{}={}".format(attr.upper(), value))
+    
+        # model
+        print('\nDefining model ...')
+        cnn = model.CNN_Text(args)
+        #if args.snapshot is not None:
+        #    print('\nLoading model from {}...'.format(args.snapshot))
+        #    cnn.load_state_dict(torch.load(args.snapshot, map_location='cpu'))
+
+        if args.cuda:
+            torch.cuda.set_device(args.device)
+            cnn = cnn.cuda()
+            
+        # training model, reporting results, model set to train() and eval() in the functions 
+        train.train(train_iter, val_iter, cnn, args)
+        acc, loss = train.evaluate(val_iter, cnn, args)
+        helpers.write_result(filename, 'a', [len(train_set), loss, acc.cpu().numpy()], args)
+        
+        # active learning
+        train.al(test_set, train_df, test_df, cnn, al_iter, args)
+        
+    print('\nDone with run {} of active learning with {}.\n'.format(avg_iter, args.method))
+        
+        
+print('\nDone with {} runs of {} active learning loops with {}.\n'.format(args.num_avg, args.rounds, args.method))

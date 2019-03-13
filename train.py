@@ -2,8 +2,11 @@ import os
 import sys
 import torch
 import torch.autograd as autograd
+import torch.nn as nn
 import torch.nn.functional as F
 
+import methods
+import helpers
 
 def train(train_iter, dev_iter, model, args):
     if args.cuda:
@@ -41,7 +44,7 @@ def train(train_iter, dev_iter, model, args):
                                                                              batch.batch_size))
             
             if steps % args.test_interval == 0:
-                dev_acc = evaluate(dev_iter, model, args)
+                dev_acc, dev_loss = evaluate(dev_iter, model, args)
                 if dev_acc > best_acc:
                     best_acc = dev_acc
                     last_step = steps
@@ -53,8 +56,38 @@ def train(train_iter, dev_iter, model, args):
             elif steps % args.save_interval == 0:
                 save(model, args.save_dir, 'snapshot', steps)
 
-    dev_acc = evaluate(dev_iter, model, args)
+    dev_acc, dev_loss = evaluate(dev_iter, model, args)
     save(model, args.save_dir, 'snapshot', steps)
+    
+def al(test_set, train_df, test_df, model, al_iter, args):
+
+    # defining activation functions
+    log_softmax = nn.LogSoftmax(dim=1)
+    softmax = nn.Softmax(dim=1)
+    if args.cuda: log_softmax, softmax = log_softmax.cuda(), softmax.cuda()
+        
+    # querying instances
+    if args.method == 'random':
+        subset = methods.random(test_set, args)
+        print('\nIter {}, selected {} instances at random.\n'.format(al_iter, len(subset)))
+    
+    elif args.method == 'entropy':
+        if args.cluster: subset, total_entropy = methods.entropy_w_clustering(test_set, test_df['text'], model, log_softmax, args)
+        else: subset, total_entropy = methods.entropy(test_set, model, log_softmax, args)
+        print('\nIter {}, selected {} instances according to entropy uncertainty, total entropy {}.\n'.format(al_iter, len(subset), total_entropy))
+        
+    elif args.method == 'dropout':
+        subset, total_var = methods.dropout(test_set, model, softmax, args)
+        print('\nIter {}, selected {} instances according to dropout uncertainty, total variance {}.\n'.format(al_iter, len(subset), total_var))
+    
+    else:
+        print('No method selected.')
+        sys.exit()
+        
+    # updating datasets
+    print('\nSubset: {}\n'.format(subset))
+    print('\nUpdating datasets ...\n')
+    helpers.update_datasets(args.datapath, train_df, test_df, subset, args)
 
 
 def evaluate(data_iter, model, args):
@@ -81,7 +114,7 @@ def evaluate(data_iter, model, args):
                                                                        accuracy, 
                                                                        corrects, 
                                                                        size))
-    return accuracy
+    return accuracy, avg_loss
 
 
 def predict(text, model, text_field, label_feild, cuda_flag):

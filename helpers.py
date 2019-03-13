@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 import torch
-import torch.nn as nn
 import torch.autograd as autograd
-import torchtext
-import torchtext.data as data
-import sys
-import pandas as pd
+import csv
 from sklearn.cluster import KMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 def get_feature(data, text_field, args):
+    '''
+        input:
+        data: data sample
+        text_field: torchtext.data Field object
+    '''
     feature = data.text
     feature = [[text_field.vocab.stoi[x] for x in feature]]
     if len(feature[0]) < 1: 
@@ -23,6 +24,12 @@ def get_feature(data, text_field, args):
     return feature
 
 def get_output(data, text_field, model, args):
+    '''
+        input:
+        data: data sample
+        text_field: torchtext.data Field object
+        model: model to predict data label
+    '''
     model.eval()
     feature = data.text
     feature = [[text_field.vocab.stoi[x] for x in feature]]
@@ -39,21 +46,19 @@ def get_output(data, text_field, model, args):
 
     return logit
 
-'''
-def update_datasets(train, test, subset, args):
-    fields = train.fields
-    test = list(test)
-    new_train = list(train)
-    new_test = []
-    for i in range(len(test)):
-        if not (i in subset): new_test.append(test[i])
-        else: new_train.append(test[i])
-    return data.Dataset(new_train,fields), data.Dataset(new_test,fields)
-'''
 
 def update_datasets(path, train_df, test_df, subset, args):
-    train_df.append(test_df.iloc[subset])
-    test_df.drop(subset)
+    '''
+        input:
+        path: path to where the data is stored
+        train_df: dataframe containing the train data
+        test_df: dataframe containing the test data
+        subset: subset of test to be added to train
+    '''
+    print('before: ', len(train_df), len(test_df))
+    train_df = train_df.append(test_df.iloc[subset])
+    test_df = test_df.drop(subset)
+    print('after: ', len(train_df), len(test_df))
     train_df.to_csv('{}/train.csv'.format(path), index=False, header=False)
     test_df.to_csv('{}/test.csv'.format(path), index=False, header=False)
     
@@ -69,3 +74,14 @@ def clustering(data, args):
     kmeans = torch.tensor(kmeans)
     if args.cuda: kmeans = kmeans.cuda()
     return kmeans
+
+def write_result(filename, mode, result, args):
+    '''
+        input:
+        filename: path and filename
+        mode: writing mode, w=crate new file, a=append to existing
+        result: list containing results to add to file
+    '''
+    with open(filename, mode=mode) as csvfile:
+        csvwriter = csv.writer(csvfile, delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+        csvwriter.writerow(result)

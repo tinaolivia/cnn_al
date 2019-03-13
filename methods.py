@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import torch
-import torch.nn as nn
-import torch.autograd as autograd
-import torchtext
-import sys
 import helpers
 
-def random(data, subset, args):
+def random(data, args):
+    subset = []
     size = len(data)
     nsel = min(size,args.inc)
     random_perm = torch.randperm(size)
@@ -17,10 +14,11 @@ def random(data, subset, args):
             subset.append(int(i))
             n += 1
             if n >= nsel: break
-    return subset, n
+    return subset
 
-def entropy(data, model, subset, act_func, args):
+def entropy(data, model, act_func, args):
     model.eval()
+    subset = []
     top_e = float('-inf')*torch.ones(args.inc)
     if args.cuda: top_e, act_func = top_e.cuda(), act_func.cuda()
     ind = torch.zeros(args.inc)
@@ -52,82 +50,45 @@ def entropy(data, model, subset, act_func, args):
         subset.append(int(i))
         
     if args.hist: return subset, args.inc, total_entropy, hist
-    else: return subset, len(subset), total_entropy 
-    
-def entropy_w_clustering(data, df, model, subset, act_func, args):
+    else: return subset, total_entropy   
+
+def entropy_w_clustering(data, df, model, log_softmax, args):
+    '''
+        input:
+        data: dataset (torchtext dataset)
+        df: dataframe column containing raw text documents
+        model: trained model to calculate entropies
+        log_softmax: log softmax activation function
+    '''
     model.eval()
-    n = 2000
-    entropies = torch.empty(n)
-    ind = torch.arange(n)
-    top_e = torch.empty(args.inc)
+    subset = []
+    kmeans = helpers.clustering(df, args)
+    text_field = data.fields['text']
+    top_e = -torch.ones(args.inc)
     top_ind = torch.empty(args.inc)
-    if args.cuda: entropies, ind, top_e, top_ind = entropies.cuda(), ind.cuda(), top_e.cuda(), top_ind.cuda()
-    text_field = data.fields['text']
+    if args.cuda: top_e = top_e.cuda()
     
-    for i, example in enumerate(data):
-        #print(i)
-        logit = helpers.get_output(example, text_field, model, args)
-        if args.cuda: logit = logit.cuda()
-        logPy = act_func(logit)
-        if args.cuda: logPy = logPy.cuda()
-        entropy = -(logPy*torch.exp(logPy)).sum()
-        if args.cuda: entropy = entropy.cuda()
-        
-        if i < n:
-            entropies[i] = entropy
-        elif entropy > torch.min(entropies):
-            min_, idx = torch.min(entropies, dim=0)
-            entropies[int(idx)] = entropy
-            ind[int(idx)] = i
-            
-        
-    kmeans = helpers.clustering(df, args)
-    sort_e, sort_ind = entropies.sort(0,True)
+    for j in range(args.inc):
+        for i, example in enumerate(data):
+            if kmeans[i] == j:
+                logit = helpers.get_output(example, text_field, model, args)
+                logPy = log_softmax(logit)
+                entropy = -(logPy*torch.exp(logPy)).sum()
+                #if args.cuda: entropy = entropy.cuda()
+                if entropy > top_e[j]:
+                    top_e[j] = entropy
+                    top_ind[j] = i
+                    
     for i in range(args.inc):
-        for j in range(n):
-            if kmeans[ind[sort_ind[j]]] == i:
-                top_e[i] = sort_e[sort_ind[j]]
-                top_ind[i] = ind[sort_ind[j]]
+        subset.append(top_ind[i])
+        
+    return subset, top_e.sum()
                 
-    for i in range(args.inc):
-        subset.append(int(top_ind[i]))
-                
-    return subset, len(subset), top_e.sum()
-    
-    
-def entropy_w_cluster(data, df, model, subset, act_func, args):
-    model.eval()
-    entropy = torch.empty(len(data))
-    top_e = torch.empty(args.inc)
-    if args.cuda: entropy, act_func, top_e = entropy.cuda(), act_func.cuda(), top_e.cuda()
-    text_field = data.fields['text']
-    kmeans = helpers.clustering(df, args)
-    
-    for i, example in enumerate(data):
-        print(i)
-        logit = helpers.get_output(example, text_field, model, args)
-        if args.cuda: logit = logit.cuda()
-        logPy = act_func(logit)
-        if args.cuda: logPy = logPy.cuda()
-        entropy[i] = -(logPy*torch.exp(logPy)).sum()
-        
-    entropy, ind = entropy.sort(0,True)
-    if args.cuda: entropy, ind = entropy.cuda(), ind.cuda()
-    for i in range(args.inc):
-        for j in range(len(data)):
-            if kmeans[int(ind[j])] == i:
-                top_e[i] = entropy[j]
-                subset.append(int(ind[j]))
-                break
-    
-    total_entropy = top_e.sum()
-        
-    return subset, len(subset), total_entropy
-        
             
-def dropout(data, model, subset, act_func, args):
+def dropout(data, model, act_func, args):
     if args.cuda: model = model.cuda()
     model.train()
+    subset = []
     text_field = data.fields['text']
     top_var = float('-inf')*torch.ones(args.inc)
     if args.cuda: top_var = top_var.cuda()
@@ -164,12 +125,13 @@ def dropout(data, model, subset, act_func, args):
         
     model.eval()
         
-    if args.hist: return subset, args.inc, total_var, hist
-    else: return subset, len(subset), total_var 
+    if args.hist: return subset,  total_var, hist
+    else: return subset, total_var 
 
 
-def vote(data, model, subset, args):
+def vote(data, model,  args):
     model.train()
+    subset = []
     top_ve = float('-inf')*torch.ones(args.inc)
     if args.cuda: top_ve = top_ve.cuda()
     ind = torch.zeros((args.inc))
@@ -206,4 +168,4 @@ def vote(data, model, subset, args):
         
     model.eval()
 
-    return subset, len(subset), total_ve
+    return subset, total_ve
