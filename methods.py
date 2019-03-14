@@ -4,6 +4,10 @@ import torch
 import helpers
 
 def random(data, args):
+    '''
+        input:
+        data: dataset 
+    '''
     subset = []
     size = len(data)
     nsel = min(size,args.inc)
@@ -16,11 +20,17 @@ def random(data, args):
             if n >= nsel: break
     return subset
 
-def entropy(data, model, act_func, args):
+def entropy(data, model, log_softmax, args):
+    '''
+        input:
+        data: dataset
+        model: trainded model to calculate entropies
+        log_softmax: log softmax activation function
+    '''
     model.eval()
     subset = []
     top_e = float('-inf')*torch.ones(args.inc)
-    if args.cuda: top_e, act_func = top_e.cuda(), act_func.cuda()
+    if args.cuda: top_e, log_softmax = top_e.cuda(), log_softmax.cuda()
     ind = torch.zeros(args.inc)
     text_field = data.fields['text']
     if args.hist: 
@@ -35,7 +45,7 @@ def entropy(data, model, act_func, args):
             print('NaN returned from get_output, iter {}'.format(i))
         else:
             if args.cuda: logit = logit.cuda()
-            logPy = act_func(logit)
+            logPy = log_softmax(logit)
             entropy = -(logPy*torch.exp(logPy)).sum()
             if args.hist: hist[int(entropy*10)] += 1
         if args.cuda: entropy = entropy.cuda()            
@@ -85,7 +95,13 @@ def entropy_w_clustering(data, df, model, log_softmax, args):
     return subset, top_e.sum()
                 
             
-def dropout(data, model, act_func, args):
+def dropout(data, model, softmax, args):
+    '''
+        input: 
+        data: dataset
+        model: trained model to classify data
+        
+    '''
     if args.cuda: model = model.cuda()
     model.train()
     subset = []
@@ -105,11 +121,11 @@ def dropout(data, model, act_func, args):
             var = torch.tensor([float('-inf')])
             print('NaN returned from get_feature, iter {}'.format(i))
         else:
-            if args.cuda: feature, act_func = feature.cuda(), act_func.cuda()
+            if args.cuda: feature, softmax = feature.cuda(), softmax.cuda()
             
             for j in range(args.num_preds):
-                if args.cuda: probs[j,:] = act_func(model(feature)).cuda()
-                else: probs[j,:] = act_func(model(feature)) 
+                if args.cuda: probs[j,:] = softmax(model(feature)).cuda()
+                else: probs[j,:] = softmax(model(feature)) 
             var = torch.abs(probs - probs.mean(dim=0)).sum() # absolute value or squared here?
         if args.cuda: var = var.cuda()    
         if args.hist: hist[int(var)] += 1        

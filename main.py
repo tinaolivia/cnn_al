@@ -63,8 +63,6 @@ args = parser.parse_args()
 
 # defining additional arguments
 args.now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-args.datapath = os.path.join(args.data_path, args.dataset)
-if not os.path.isdir(args.datapath): os.makedirs(args.datapath)
 args.cuda = (not args.no_cuda) and torch.cuda.is_available(); del args.no_cuda
 args.kernel_sizes = [int(k) for k in args.kernel_sizes.split(',')]
 if args.method is not None: args.save_dir = os.path.join(args.method, args.now)
@@ -75,15 +73,18 @@ if args.randomness < 0: args.randomness = 0
 elif args.randomness > 1: args.randomness /= 100
 
 # creating new path for later
-os.makedirs(os.path.join(args.datapath, args.now))
+os.makedirs(os.path.join(args.data_path, args.dataset, args.now))
 
 # copying validation set to new path
-val_df = pd.read_csv('{}/val.csv'.format(args.datapath), header=None, names=['text', 'label'])
-val_df.to_csv('{}/{}/val.csv'.format(args.datapath, args.now), header=False, index=False)
+val_df = pd.read_csv('{}/{}/val.csv'.format(args.data_path, args.dataset), header=None, names=['text', 'label'])
+val_df.to_csv('{}/{}/{}/val.csv'.format(args.data_path, args.dataset, args.now), header=False, index=False)
 
 for avg_iter in range(args.num_avg):
     
     print('\nRun {}\n'.format(avg_iter))
+    
+    # setting datapath to original datasets
+    args.datapath = os.path.join(args.data_path, args.dataset)
     
     filename = os.path.join(args.result_path, '{}_{}_{}.csv'.format(args.method, args.dataset, avg_iter))
     helpers.write_result(filename, 'w', ['Train Size', 'loss', 'accuracy'], args)
@@ -113,6 +114,7 @@ for avg_iter in range(args.num_avg):
         # update args and print
         args.embed_num = len(text_field.vocab)
         args.class_num = len(label_field.vocab) - 1
+        # setting datapath to updated datasets
         args.datapath = os.path.join(args.data_path, args.dataset, args.now) #updated dataset in new folder
 
 
