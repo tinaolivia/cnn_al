@@ -100,7 +100,7 @@ def dropout(data, model, softmax, args):
         input: 
         data: dataset
         model: trained model to classify data
-        
+        softmax: softmax activation function
     '''
     if args.cuda: model = model.cuda()
     model.train()
@@ -146,6 +146,11 @@ def dropout(data, model, softmax, args):
 
 
 def vote(data, model,  args):
+    '''
+        input:
+        data: dataset
+        model: trained model to clasify data
+    '''
     model.train()
     subset = []
     top_ve = float('-inf')*torch.ones(args.inc)
