@@ -62,9 +62,8 @@ def train(train_iter, dev_iter, model, args):
 def al(test_set, train_df, test_df, model, al_iter, args):
 
     # defining activation functions
-    log_softmax = nn.LogSoftmax(dim=1)
-    softmax = nn.Softmax(dim=1)
-    if args.cuda: log_softmax, softmax = log_softmax.cuda(), softmax.cuda()
+    log_softmax = nn.LogSoftmax(dim=1).cuda()
+    softmax = nn.Softmax(dim=1).cuda()
         
     # querying instances
     if args.method == 'random':
@@ -83,6 +82,13 @@ def al(test_set, train_df, test_df, model, al_iter, args):
     else:
         print('No method selected.')
         sys.exit()
+        
+    # adding randomness 
+    if args.method != 'random' and args.randomness > 0:
+        print('\nInitial subset: {}'.format(subset))
+        subset = helpers.randomness(subset, len(test_set), args)
+        print('\nUpdated subset: {}'.format(subset))
+
         
     # updating datasets
     print('\nSubset: {}\n'.format(subset))
@@ -109,7 +115,7 @@ def evaluate(data_iter, model, args):
 
     size = len(data_iter.dataset)
     avg_loss /= size
-    accuracy = 100.0 * corrects/size
+    accuracy = float(100.0 * corrects/size)
     print('\nEvaluation - loss: {:.6f}  acc: {:.4f}%({}/{}) \n'.format(avg_loss, 
                                                                        accuracy, 
                                                                        corrects, 

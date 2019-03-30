@@ -3,7 +3,9 @@ import torch
 import torch.autograd as autograd
 import csv
 from sklearn.cluster import KMeans
+from sklearn.cluster import MiniBatchKMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
+import numpy as np
 
 def get_feature(data, text_field, args):
     '''
@@ -46,6 +48,19 @@ def get_output(data, text_field, model, args):
 
     return logit
 
+def get_preds(batch, model, act_func, args):
+    '''
+        input:
+        data_iter: iterator object (not bucketiterator)
+        model: trained model for classification, set to eval() or train() outside
+        dim: dimension of output (batch_size, class_num, num_preds)
+    '''
+    feature = batch.text.cuda()
+    feature.data.t_()
+    logit = act_func(model(feature))
+    return logit
+        
+
 
 def update_datasets(path, train_df, test_df, subset, args):
     '''
@@ -62,6 +77,18 @@ def update_datasets(path, train_df, test_df, subset, args):
     train_df.to_csv('{}/train.csv'.format(path), index=False, header=False)
     test_df.to_csv('{}/test.csv'.format(path), index=False, header=False)
     
+def randomness(subset, range_, args):
+    Bern = torch.distributions.bernoulli.Bernoulli(torch.tensor([1-args.randomness]))
+    for i,element in enumerate(subset):
+        B = int(Bern.sample())
+        if B == 0:
+            print('\nUpdating subset element {}'.format(i))
+            temp = subset[i]
+            while (temp in subset):
+                temp = int(torch.randint(high=range_, size=(1,)))
+            subset[i] = temp
+    return subset
+
     
 def clustering(data, args):
     '''
@@ -70,7 +97,7 @@ def clustering(data, args):
     '''
     vectorizer = TfidfVectorizer(stop_words='english')
     X = vectorizer.fit_transform(data)
-    kmeans = KMeans(n_clusters=args.inc).fit_predict(X)
+    kmeans = MiniBatchKMeans(n_clusters=args.inc).fit_predict(X)
     kmeans = torch.tensor(kmeans)
     if args.cuda: kmeans = kmeans.cuda()
     return kmeans

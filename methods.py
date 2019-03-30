@@ -29,13 +29,9 @@ def entropy(data, model, log_softmax, args):
     '''
     model.eval()
     subset = []
-    top_e = float('-inf')*torch.ones(args.inc)
-    if args.cuda: top_e, log_softmax = top_e.cuda(), log_softmax.cuda()
+    top_e = float('-inf')*torch.ones(args.inc).cuda()
     ind = torch.zeros(args.inc)
     text_field = data.fields['text']
-    if args.hist: 
-        hist = torch.zeros(40)
-        if args.cuda: hist = hist.cuda()
     
     for i,example in enumerate(data):
         if i % int(len(data)/100) == 0: print(i)
@@ -44,11 +40,8 @@ def entropy(data, model, log_softmax, args):
             entropy = torch.tensor([-1]) 
             print('NaN returned from get_output, iter {}'.format(i))
         else:
-            if args.cuda: logit = logit.cuda()
             logPy = log_softmax(logit)
-            entropy = -(logPy*torch.exp(logPy)).sum()
-            if args.hist: hist[int(entropy*10)] += 1
-        if args.cuda: entropy = entropy.cuda()            
+            entropy = -(logPy*torch.exp(logPy)).sum().cuda()
         if entropy.double() > torch.min(top_e).double():
             min_e, idx = torch.min(top_e, dim=0)
             top_e[int(idx)] = entropy.double()
@@ -59,8 +52,7 @@ def entropy(data, model, log_softmax, args):
     for i in ind:
         subset.append(int(i))
         
-    if args.hist: return subset, args.inc, total_entropy, hist
-    else: return subset, total_entropy   
+    return subset, total_entropy   
 
 def entropy_w_clustering(data, df, model, log_softmax, args):
     '''
@@ -93,6 +85,7 @@ def entropy_w_clustering(data, df, model, log_softmax, args):
         subset.append(top_ind[i])
         
     return subset, top_e.sum()
+    
                 
             
 def dropout(data, model, softmax, args):
@@ -106,16 +99,12 @@ def dropout(data, model, softmax, args):
     model.train()
     subset = []
     text_field = data.fields['text']
-    top_var = float('-inf')*torch.ones(args.inc)
-    if args.cuda: top_var = top_var.cuda()
-    ind = torch.zeros(args.inc)
-    if args.hist: 
-        hist = torch.zeros(1000)
-        if args.cuda: hist = hist.cuda()
+    top_var = -torch.ones(args.inc).cuda()
+    ind = torch.empty(args.inc)
+
     for i, example in enumerate(data):
         if i % int(len(data)/100) == 0: print(i)
-        probs = torch.empty((args.num_preds, args.class_num))
-        if args.cuda: probs = probs.cuda()
+        probs = torch.empty((args.num_preds, args.class_num)).cuda()
         feature = helpers.get_feature(example, text_field, args)
         if torch.max(torch.isnan(feature)) == 1: 
             var = torch.tensor([float('-inf')])
@@ -124,11 +113,10 @@ def dropout(data, model, softmax, args):
             if args.cuda: feature, softmax = feature.cuda(), softmax.cuda()
             
             for j in range(args.num_preds):
-                if args.cuda: probs[j,:] = softmax(model(feature)).cuda()
-                else: probs[j,:] = softmax(model(feature)) 
-            var = torch.abs(probs - probs.mean(dim=0)).sum() # absolute value or squared here?
-        if args.cuda: var = var.cuda()    
-        if args.hist: hist[int(var)] += 1        
+                probs[j,:] = softmax(model(feature)) 
+            #var = torch.abs(probs - probs.mean(dim=0)).sum() # absolute value or squared here?
+            var = torch.pow(probs-probs.mean(dim=0), exponent=2).sum().cuda()
+            
         if var > torch.min(top_var):
             min_var, idx = torch.min(top_var,dim=0)
             top_var[int(idx)] = var
@@ -141,8 +129,41 @@ def dropout(data, model, softmax, args):
         
     model.eval()
         
-    if args.hist: return subset,  total_var, hist
-    else: return subset, total_var 
+    return subset, total_var 
+    
+def dropout_w_clustering(data, df, model, softmax, args):
+    '''
+        input: 
+        data: dataset
+        df: dataframe with raw text documents
+        model: trained model to classify data
+        softmax: softmax activation function
+    '''
+    model.train()
+    subset = []
+    kmeans = helpers.clustering(df, args)
+    text_field = data.fields['text']
+    top_var = -torch.ones(args.inc).cuda()
+    top_ind = torch.empty(args.inc)
+    
+    for i in range(args.inc):
+        for j, example in enumerate(data):
+            if kmeans[j] == i:
+                probs = torch.empty((args.num_preds, args.class_num)).cuda()
+                feature = helpers.get_feature(example, text_field, args)
+                for k in range(args.num_preds):
+                    probs[k,:] = softmax(mode(feature)).cuda()
+                var = torch.pow(probs-proms.mean(dim=0), exponent=2).sum().cuda()
+                if var > top_var[i]:
+                    top_var[i] = var
+                    top_ind[i] = j
+                    
+    for i in range(args.inc):
+        subset.append(top_ind[i])
+    
+    return subset, top_var.sum()
+                
+    
 
 
 def vote(data, model,  args):
