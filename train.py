@@ -59,7 +59,7 @@ def train(train_iter, dev_iter, model, args):
     dev_acc, dev_loss = evaluate(dev_iter, model, args)
     save(model, args.save_dir, 'snapshot', steps)
     
-def al(test_set, train_df, test_df, model, al_iter, args):
+def al(test_iter, train_df, test_df, model, al_iter, args):
 
     # defining activation functions
     log_softmax = nn.LogSoftmax(dim=1).cuda()
@@ -67,26 +67,42 @@ def al(test_set, train_df, test_df, model, al_iter, args):
         
     # querying instances
     if args.method == 'random':
-        subset = methods.random(test_set, args)
+        if args.clustering: subset = methods.random_w_clustering(len(test_df['label']), test_df['text'], args)
+        else: subset = methods.random(len(test_df['label']), args)
+        total = 0
         print('\nIter {}, selected {} instances at random.\n'.format(al_iter, len(subset)))
     
     elif args.method == 'entropy':
-        if args.cluster: subset, total_entropy = methods.entropy_w_clustering(test_set, test_df['text'], model, log_softmax, args)
-        else: subset, total_entropy = methods.entropy(test_set, model, log_softmax, args)
-        print('\nIter {}, selected {} instances according to entropy uncertainty, total entropy {}.\n'.format(al_iter, len(subset), total_entropy))
+        subset, total = methods.entropy(test_iter, model, log_softmax, args, df=test_df['text'])
+        print('\nIter {}, selected {} instances according to entropy uncertainty, total entropy {}.\n'.format(al_iter, len(subset), total))
         
-    elif args.method == 'dropout':
-        subset, total_var = methods.dropout(test_set, model, softmax, args)
-        print('\nIter {}, selected {} instances according to dropout uncertainty, total variance {}.\n'.format(al_iter, len(subset), total_var))
+    elif args.method == 'margin':
+        subset, total = methods.margin(test_iter, model, softmax, args, df=test_df['text'])
+        print('\nIter {}, selected {} instances according to margin sampling, total margin {}.\n'.format(al_iter, len(subset), total))
+        
+    elif args.method == 'dropout_variability':
+        subset, total = methods.dropout_variability(test_iter, model, softmax, args, df=test_df['text'])
+        print('\nIter {}, selected {} instances according to dropout variability, total variance {}.\n'.format(al_iter, len(subset), total))
+    
+    elif args.metod == 'dropout_entropy':
+        subset, total = methods.dropout_entropy(test_iter, model, softmax, args, df=test_df['text'])
+        print('\nIter {}, selected {} instances according to dropout entropy, total entropy {}.\n'.format(al_iter, len(subset), total))
+        
+    elif args.method == 'dropout_margin':
+        subset, total = methods.dropout_margin(test_iter, model, softmax, args, df=test_df['text'])
+        
+    elif args.method == 'dropout_variation_ratio':
+        subset, total = methods.dropout_variation(test_iter, model, softmax, args, df=test_df['text'])
+        print('\nIter {}, selected {} instances according to dropout maximum variation ratios, total variation ratio {}.\n'.format(al_iter, len(subset), total))
     
     else:
-        print('No method selected.')
+        print('No implemented method selected.')
         sys.exit()
         
     # adding randomness 
     if args.method != 'random' and args.randomness > 0:
         print('\nInitial subset: {}'.format(subset))
-        subset = helpers.randomness(subset, len(test_set), args)
+        subset = helpers.randomness(subset, len(test_df['label']), args)
         print('\nUpdated subset: {}'.format(subset))
 
         
@@ -94,6 +110,7 @@ def al(test_set, train_df, test_df, model, al_iter, args):
     print('\nSubset: {}\n'.format(subset))
     print('\nUpdating datasets ...\n')
     helpers.update_datasets(args.datapath, train_df, test_df, subset, args)
+    return total
 
 
 def evaluate(data_iter, model, args):

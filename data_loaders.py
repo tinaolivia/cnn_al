@@ -34,26 +34,22 @@ def imdb(path, text_field, label_field, args, **kargs):
     datafields = [("text",text_field),("label",label_field)]
     trn, val, tst = data.TabularDataset.splits(path=path, train='train.csv', validation='val.csv', 
                                                test='test.csv', format='csv', fields=datafields)
-    
     text_field.build_vocab(trn)
     label_field.build_vocab(trn)
-    
-    train_iter = data.BucketIterator(trn, args.batch_size, **kargs)
-    val_iter = data.BucketIterator(val, args.batch_size, **kargs)
-    test_iter = data.BucketIterator(tst, args.batch_size, **kargs)
-    
-    return trn, train_iter, val, val_iter, tst, test_iter
+    return trn, val, tst
+
 
 def ag(path, text_field, label_field, args, **kargs):
     datafields = [("text",text_field), ("label",label_field)]
     trn, val, tst = data.TabularDataset.splits(path=path, train='train.csv', validation='val.csv', 
-                                               test='test.csv', format='csv', fields=datafields)
-    
+                                               test='test.csv', format='csv', fields=datafields)    
+    text_field.build_vocab(trn)
+    label_field.build_vocab(trn)    
+    return trn, val, tst
+
+
+def ds_loader(path, datafields, args):
+    trn, val, tst = data.TabularDataset.splits(path=path, train='train.csv', validation='val.csv', test='test.csv', fields=datafields)
     text_field.build_vocab(trn)
     label_field.build_vocab(trn)
-    
-    train_iter = data.BucketIterator(trn, args.batch_size, **kargs)
-    val_iter = data.BucketIterator(val, args.batch_size, **kargs)
-    test_iter = data.BucketIterator(val, args.batch_size, **kargs)
-    
-    return trn, train_iter, val, val_iter, tst, test_iter
+    return trn, val, tst

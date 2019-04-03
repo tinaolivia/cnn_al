@@ -1,213 +1,272 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import torch
+import sys
 import helpers
 
-def random(data, args):
+def random(data_size, args):
     '''
         input:
-        data: dataset 
+        data_size: size of the dataset 
     '''
-    subset = []
-    size = len(data)
-    nsel = min(size,args.inc)
-    random_perm = torch.randperm(size)
-    n = 0
-    for i in random_perm:
-        if not(i in subset):
-            subset.append(int(i))
-            n += 1
-            if n >= nsel: break
+    random_perm = torch.randperm(data_size)
+    subset = list(random_perm[:args.inc].numpy())
     return subset
 
-def entropy(data, model, log_softmax, args):
+def random_w_clustering(data_size, df, args):
     '''
         input:
-        data: dataset
-        model: trainded model to calculate entropies
-        log_softmax: log softmax activation function
-    '''
-    model.eval()
-    subset = []
-    top_e = float('-inf')*torch.ones(args.inc).cuda()
-    ind = torch.zeros(args.inc)
-    text_field = data.fields['text']
-    
-    for i,example in enumerate(data):
-        if i % int(len(data)/100) == 0: print(i)
-        logit = helpers.get_output(example, text_field, model, args)
-        if (torch.max(torch.isnan(logit)) == 1): 
-            entropy = torch.tensor([-1]) 
-            print('NaN returned from get_output, iter {}'.format(i))
-        else:
-            logPy = log_softmax(logit)
-            entropy = -(logPy*torch.exp(logPy)).sum().cuda()
-        if entropy.double() > torch.min(top_e).double():
-            min_e, idx = torch.min(top_e, dim=0)
-            top_e[int(idx)] = entropy.double()
-            ind[int(idx)] = i
-                                    
-    print('Top entropy: ', top_e)
-    total_entropy = top_e.sum()
-    for i in ind:
-        subset.append(int(i))
-        
-    return subset, total_entropy   
-
-def entropy_w_clustering(data, df, model, log_softmax, args):
-    '''
-        input:
-        data: dataset (torchtext dataset)
-        df: dataframe column containing raw text documents
-        model: trained model to calculate entropies
-        log_softmax: log softmax activation function
-    '''
-    model.eval()
-    subset = []
-    kmeans = helpers.clustering(df, args)
-    text_field = data.fields['text']
-    top_e = -torch.ones(args.inc)
-    top_ind = torch.empty(args.inc)
-    if args.cuda: top_e = top_e.cuda()
-    
-    for j in range(args.inc):
-        for i, example in enumerate(data):
-            if kmeans[i] == j:
-                logit = helpers.get_output(example, text_field, model, args)
-                logPy = log_softmax(logit)
-                entropy = -(logPy*torch.exp(logPy)).sum()
-                #if args.cuda: entropy = entropy.cuda()
-                if entropy > top_e[j]:
-                    top_e[j] = entropy
-                    top_ind[j] = i
-                    
-    for i in range(args.inc):
-        subset.append(top_ind[i])
-        
-    return subset, top_e.sum()
-    
-                
-            
-def dropout(data, model, softmax, args):
-    '''
-        input: 
-        data: dataset
-        model: trained model to classify data
-        softmax: softmax activation function
-    '''
-    if args.cuda: model = model.cuda()
-    model.train()
-    subset = []
-    text_field = data.fields['text']
-    top_var = -torch.ones(args.inc).cuda()
-    ind = torch.empty(args.inc)
-
-    for i, example in enumerate(data):
-        if i % int(len(data)/100) == 0: print(i)
-        probs = torch.empty((args.num_preds, args.class_num)).cuda()
-        feature = helpers.get_feature(example, text_field, args)
-        if torch.max(torch.isnan(feature)) == 1: 
-            var = torch.tensor([float('-inf')])
-            print('NaN returned from get_feature, iter {}'.format(i))
-        else:
-            if args.cuda: feature, softmax = feature.cuda(), softmax.cuda()
-            
-            for j in range(args.num_preds):
-                probs[j,:] = softmax(model(feature)) 
-            #var = torch.abs(probs - probs.mean(dim=0)).sum() # absolute value or squared here?
-            var = torch.pow(probs-probs.mean(dim=0), exponent=2).sum().cuda()
-            
-        if var > torch.min(top_var):
-            min_var, idx = torch.min(top_var,dim=0)
-            top_var[int(idx)] = var
-            ind[int(idx)] = i
-    
-    print('Top variance: {}'.format(top_var))
-    total_var = top_var.sum()
-    for i in ind:
-        subset.append(int(i))
-        
-    model.eval()
-        
-    return subset, total_var 
-    
-def dropout_w_clustering(data, df, model, softmax, args):
-    '''
-        input: 
-        data: dataset
+        data_size: size of dataset
         df: dataframe with raw text documents
-        model: trained model to classify data
-        softmax: softmax activation function
     '''
-    model.train()
-    subset = []
+    subset=[]
     kmeans = helpers.clustering(df, args)
-    text_field = data.fields['text']
-    top_var = -torch.ones(args.inc).cuda()
-    top_ind = torch.empty(args.inc)
-    
+    random_perm = torch.randperm(data_size)
     for i in range(args.inc):
-        for j, example in enumerate(data):
-            if kmeans[j] == i:
-                probs = torch.empty((args.num_preds, args.class_num)).cuda()
-                feature = helpers.get_feature(example, text_field, args)
-                for k in range(args.num_preds):
-                    probs[k,:] = softmax(mode(feature)).cuda()
-                var = torch.pow(probs-proms.mean(dim=0), exponent=2).sum().cuda()
-                if var > top_var[i]:
-                    top_var[i] = var
-                    top_ind[i] = j
-                    
-    for i in range(args.inc):
-        subset.append(top_ind[i])
-    
-    return subset, top_var.sum()
-                
-    
+        for j in range(data_size):
+            if kmeans[random_perm[j]] == i:
+                subset.append(random_perm[j])
+                break
+    return subset
 
-
-def vote(data, model,  args):
+def entropy(data_iter, model, log_softmax, args, df=None):
     '''
         input:
-        data: dataset
-        model: trained model to clasify data
+        data_iter: data iterator
+        model: trained model
+        log_softmax: log softmax activation function        
+        df: dataframe column of text data
+    '''
+    model.eval()
+    if args.clustering and (df is not None): kmeans = helpers.clustering(df, args) 
+    top_e = -torch.ones(args.inc).cuda()
+    top_ind = torch.empty(args.inc).cuda()
+    
+    for i, batch in enumerate(data_iter): 
+        logPys = helpers.get_preds(batch, model, log_softmax, args).cuda()
+        entropies = -(logPys*torch.exp(logPys)).sum(dim=1).cuda()            
+        for j in range(len(batch)):
+            if args.clustering and (df is not None):
+                for k in range(args.inc):
+                    if kmeans[i*args.batch_size+j] == k and entropies[j] > torch.min(top_e, dim=0):
+                        top_e[k] = entropies[j]
+                        top_ind[k] = i*args.batch_size + j
+            else:
+                if entropies[j] > torch.min(top_e):
+                    min_e, idx = torch.min(top_e, dim=0)
+                    top_e[idx] = entropies[j]
+                    top_ind[int(idx)] = i*args.batch_size + j
+                
+    subset = list(top_ind.cpu().numpy())
+    return subset, top_e.cpu().numpy().sum()
+
+
+def margin(data_iter, model, softmax, args, df=None):
+    '''
+        input:
+        data_iter: data iterator
+        model: trained model
+        softmax: softmax activation function
+        df: dataframe column of text data
+    '''
+    model.eval()
+    if args.clustering and (df is not None): kmeans = helpers.clustering(df, args) 
+    min_m = torch.ones(args.inc).cuda()
+    min_ind = torch.empty(args.inc).cuda()
+    
+    for i, batch in enumerate(data_iter):
+        logits = helpers.get_preds(batch, model, softmax, args).sort(descending=True)[0].cuda()
+        margins = logits[:,0] - logits[:,1]
+        for j in range(len(batch)):
+            if args.clustering and (df is not None):
+                for k in range(args.inc):
+                    if kmeans[i*args.batch_size+j] == k and margin[j] < min_m[k]:
+                        min_m[k] = margin[j]
+                        min_ind[k] = i*args.batch_size + j 
+            else:
+                if margins[j] < torch.max(min_m, dim=0):
+                    max_m, idx = torch.min(min_m, dim=0)
+                    min_m[idx] = margins[j]
+                    min_ind[idx] = i*args.batch_size + j
+                
+    subset = list(min_ind.cpu().numpy())
+    return subset, min_m.cpu().numpy().sum()
+        
+
+
+def variation_ratio(data_iter, model, softmax, args, df = None):
+    '''
+        input:
+        data_iter: data iterator
+        model: trained model
+        softmax: softmax activation function
+        df: dataframe column of text data
+    '''
+    model.eval()
+    if args.clustering and (df is not None): kmeans = helpers.clustering(df, args)
+    top_var = -torch.ones(args.inc).cuda()
+    top_ind = torch.empty(args.inc).cuda()
+    
+    for i, batch in enumerate(data_iter):
+        logits = helpers.get_preds(batch, model, softmax, args).cuda()
+        var = 1 - logits.max(dim=1)[0]
+        for j in range(len(batch)):
+            if args.clustering and (df is not None):
+                for k in range(args.inc):
+                    if kmeans[i*args.batch_size+j] == k and var[j] > top_var[k]:
+                        top_var[k] = var[j]
+                        top_ind[k] = i*args.batch_size + j
+            else:
+                if var[j] > torch.min(top_var, dim=0):
+                    min_var, idx = torch.min(top_var, dim=0)
+                    top_var[idx] = var[j]
+                    top_ind[idx] = i*args.batch_size + j
+                
+    subset = list(top_ind.cpu().numpy())
+    return subset, top_var.cpu().numpy().sum()
+
+
+#--------------------------------------------------------------------------------------------------
+# Dropout methods
+    
+def dropout_variability(data_iter, model, softmax, args, df=None):
+    '''
+        input:
+        data_iter: data iterator
+        model: trained model
+        softmax: softmax activation function
+        df: dataframe column of text data
     '''
     model.train()
-    subset = []
-    top_ve = float('-inf')*torch.ones(args.inc)
-    if args.cuda: top_ve = top_ve.cuda()
-    ind = torch.zeros((args.inc))
-    text_field = data.fields['text']
-    for i, example in enumerate(data):
-        if i % int(len(data)/100) == 0: print(i)
-        preds = torch.zeros(args.num_preds)
-        votes = torch.zeros(args.class_num)
-        feature = helpers.get_feature(example, text_field, args)
-        if torch.max(torch.isnan(feature)) == 1: 
-            ventropy = torch.tensor([float('-inf')])
-            print('NaN returned from get_feature, iter {}'.format(i))
-        else:
-            if args.cuda: preds, votes, feature = preds.cuda(), votes.cuda(), feature.cuda()
-        
-            for j in range(args.num_preds):
-                _, preds[j] = torch.max(model(feature),1)
-            
-            for j in range(args.class_num):
-                votes[j] = (preds == j).sum()/args.num_preds
-            
-            ventropy = -(votes*torch.log(votes)).sum()
-        
-        if args.cuda: ventropy = ventropy.cuda()    
-        if ventropy > torch.min(top_ve):
-            min_ve, idx = torch.min(top_ve,dim=0)
-            top_ve[int(idx)] = ventropy
-            ind[int(idx)] = i 
-            
-    print('Top vote entropy: {}'.format(top_ve))
-    total_ve = top_ve.sum()
-    for i in ind:
-        subset.append(int(i))
-        
+    if args.clustering and (df is not None): kmeans = helpers.clustering(df, args)
+    top_var = -torch.ones(args.inc).cuda()
+    top_ind = torch.empty(args.inc).cuda()
+    
+    for i, batch in enumerate(data_iter):
+        probs = torch.empty((args.num_preds, len(batch), args.class_num)).cuda()
+        for j in range(args.num_preds):
+            probs[j] = helpers.get_preds(batch, model, softmax, args).cuda()
+        mean = probs.mean(dim=0)
+        var = torch.pow(probs - mean, 2).sum(dim=1).cuda()
+        for j in range(len(batch)):
+            if args.clustering and (df is not None):
+                for k in range(args.inc):
+                    if kmeans[i*args.batch_size+j] == k and var[j] > top_var[k]:
+                        top_var[k] = var[j]
+                        top_ind[k] = i*args.batch_size + j
+            else:
+                if var[j] > torch.min(top_var, dim=0):
+                    min_var, idx = torch.min(top_var, dim=0)
+                    top_var[idx] = var[j]
+                    top_ind[idx] = i*args.batch_size + j
+                
     model.eval()
+    subset = list(top_ind.cpu().numpy())
+    return subset, top_var.cpu().numpy().sum()
 
-    return subset, total_ve
+def dropout_entropy(data_iter, model, softmax, args, df=None):
+    '''
+        input:
+        data_iter: data iterator
+        model: trained model
+        softmax: softmax activation function
+        df: dataframe column of text data
+    '''
+    model.train()
+    if args.clustering and (df is not None): kmeans = helpers.clustering(df, args)
+    top_e = -torch.ones(args.inc).cuda()
+    top_ind = torch.empty(args.inc).cuda()
+    
+    for i, batch in enumerate(data_iter):
+        probs = torch.empty((args.num_preds, len(batch), args.class_num)).cuda()
+        for j in range(args.num_preds):
+            probs[j] = helpers.get_preds(batch, model, softmax, args).cuda()
+        mean = probs.mean(dim=0).cuda()
+        entropies = -(mean*torch.log(mean)).sum(dim=1).cuda()
+        for j in range(len(batch)):
+            if args.clustering and (df is not None):
+                for k in range(args.inc):
+                    if kmeans[i*args.batch_size+j] == k and entropies[j] > top_e[k]:
+                        top_e[k] = entropies[j]
+                        top_ind[k] = i*args.batch_size + j
+            else:
+                if entropies[j] > torch.min(top_e, dim=0):
+                    min_e, idx = torch.min(top_e, dim=0)
+                    top_e[idx] = entropies[j]
+                    top_ind[idx] = i*args.batch_size + j
+    
+    model.eval()
+    subset = list(top_ind.cpu().numpy())
+    return subset, top_e.cpu().numpy().sum()
+
+def dropout_margin(data_iter, model, softmax, args, df=None):
+    '''
+        input:
+        data_iter: data iterator
+        model: trained model
+        softmax: softmax activation function
+        df: dataframe column of text data
+    '''
+    model.train()
+    if args.clustering and (df is not None): kmeans = helpers.clustering(df, args)
+    min_m = torch.ones(args.inc).cuda()
+    min_ind = torch.empty(args.inc).cuda()
+    
+    for i, batch in enumerate(data_iter):
+        probs = torch.empty((args.num_preds, len(batch), args.class_num)).cuda()
+        for j in range(args.num_preds):
+            probs[j] = helpers.get_preds(batch, model, softmax, args).cuda()
+        mean = probs.mean(dim=0).sort(descending=True)[0].cuda()
+        margins = mean[:,0] - mean[:,1]
+        for j in range(len(batch)):
+            if args.clustering and (df is not None):
+                for k in range(args.inc):
+                    if kmeans[i*args.batch_size+j] == k and margins[j] < min_m[k]:
+                        min_m[k] = margin[j]
+                        min_ind[k] = i*args.batch_size + j
+            else:
+                if margins[j] < torch.max(min_m, dim=0):
+                    max_m, idx = torch.max(min_m, dim=0)
+                    min_m[idx] = margins[j]
+                    min_ind[idx] = i*args.batch_size + j
+    
+    model.eval()
+    subset = list(min_ind.cpu().numpy())
+    return subset, min_m.cpu().numpy().sum()
+    
+
+def dropout_variation(data_iter, model, softmax, args, df=None):
+    '''
+        input:
+        data_iter: data iterator
+        model: trained model
+        softmax: softmax activation function
+        df: dataframe column of text data
+    '''
+    model.train()
+    if args.clustering and (df is not None): kmeans = helpers.clustering(df, args)
+    top_var = -torch.ones(args.inc).cuda()
+    top_ind = torch.empty(args.inc).cuda()
+    
+    for i, batch in enumerate(data_iter):
+        probs = torch.empty((args.num_preds, len(batch), args.class_num)).cuda()
+        for j in range(args.num_preds):
+            probs[j] = helpers.get_preds(batch, model, softmax, args).cuda()
+        mean = probs.mean(dim=0).cuda()
+        var = 1 - mean.max(dim=1)[0]
+        for j in range(len(batch)):
+            if args.clustering and (df is not None):
+                for k in range(args.inc):
+                    if kmeans[i*args.batch_size+j] == k and var[j] > top_var[k]:
+                        top_var[k] = var[j]
+                        top_ind[k] = i*args.batch_size + j
+            else:
+                if var[j] > torch.min(top_var, dim=0):
+                    min_var, idx = torch.min(top_var, dim=0)
+                    top_var[idx] = var[j]
+                    top_ind[idx] = i*args.batch_size + j
+                
+    model.eval()
+    subset = list(top_ind.cpu().numpy())
+    return subset, top_var.cpu().numpy().sum()
+        

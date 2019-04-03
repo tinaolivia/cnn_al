@@ -20,13 +20,13 @@ csv.field_size_limit(sys.maxsize)
 parser = argparse.ArgumentParser(description='CNN text classificer')
 # learning
 parser.add_argument('-lr', type=float, default=0.001, help='initial learning rate [default: 0.001]')
-parser.add_argument('-epochs', type=int, default=256, help='number of epochs for train [default: 256]')
+parser.add_argument('-epochs', type=int, default=50, help='number of epochs for train [default: 50]')
 parser.add_argument('-batch-size', type=int, default=64, help='batch size for training [default: 64]')
 parser.add_argument('-log-interval',  type=int, default=1,   help='how many steps to wait before logging training status [default: 1]')
 parser.add_argument('-test-interval', type=int, default=100, help='how many steps to wait before testing [default: 100]')
 parser.add_argument('-save-interval', type=int, default=1000, help='how many steps to wait before saving [default:500]')
 parser.add_argument('-save-dir', type=str, default='snapshot', help='where to save the snapshot')
-parser.add_argument('-early-stop', type=int, default=250, help='iteration numbers to stop without performance increasing')
+parser.add_argument('-early-stop', type=int, default=250, help='iteration numbers to stop without performance increasing [default: 250]')
 parser.add_argument('-save-best', type=bool, default=True, help='whether to save when get best performance')
 parser.add_argument('-num-avg', type=int, default=10, help='number of runs to average over [default=10]')
 parser.add_argument('-result-path', type=str, default='results', help='where to store results [default: results]')
@@ -73,6 +73,9 @@ if args.randomness < 0: args.randomness = 0
 elif args.randomness > 1: args.randomness /= 100
 
 # creating new path for later
+while os.path.isdir(os.path.join(args.data_path, args.dataset, args.now)):
+    args.now = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+
 os.makedirs(os.path.join(args.data_path, args.dataset, args.now))
 
 # copying validation set to new path
@@ -87,7 +90,8 @@ for avg_iter in range(args.num_avg):
     args.datapath = os.path.join(args.data_path, args.dataset)
     
     filename = os.path.join(args.result_path, '{}_{}_{}.csv'.format(args.method, args.dataset, avg_iter))
-    helpers.write_result(filename, 'w', ['Train Size', 'loss', 'accuracy'], args)
+    helpers.write_result(filename, 'w', ['Train Size', 'loss', 'accuracy', 'total {}'.format(args.dataset)], args)
+    total = 0
     
     for al_iter in range(args.rounds):
     
@@ -96,20 +100,14 @@ for avg_iter in range(args.num_avg):
         label_field = data.Field(sequential=False)
 
         # load data
-        if args.dataset == 'imdb':
-            print('\nLoading IMDB movie review data ...')
-            train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.imdb(args.datapath, text_field, label_field, args, 
-                                                                                              device=torch.device('cpu'), repeat=False)
-            train_df = pd.read_csv('{}/train.csv'.format(args.datapath), header=None, names=['text', 'label'])
-            test_df = pd.read_csv('{}/test.csv'.format(args.datapath), header=None, names=['text', 'label'])
+        print('\nLoading {} data ...\n'.format(args.dataset))
+        train_set, val_set, test_set = data_loaders.ds_loader(args.datapath, text_field, label_field, args)
+        train_iter = data.BucketIterator(train_set, args, device=torch.device('cpu'), repeat=False)
+        val_iter = data.BucketIterator(val_set, args,  device=torch.device('cpu'), repeat=False, train=False)
+        test_iter = data.Iterator(test_set, args, train=False, shuffle=False, sort=False, sort_within_batch=False,  device=torch.device('cpu'), repeat=False)
+        train_df = pd.read_csv('{}/train.csv'.format(args.datapath), header=None, names=['text', 'label'])
+        test_df = pd.read_csv('{}/test.csv'.format(args.datapath), header=None, names=['text', 'label'])
 
-        elif args.dataset == 'ag':
-            print('\nloading AG News data ...')
-            train_set, train_iter, val_set, val_iter, test_set, test_iter = data_loaders.ag(args.datapath, text_field, label_field, args, 
-                                                                                            device=torch.device('cpu'), repeat=False)  
-        else: 
-            print('\nDataset is not defined.')
-            sys.exit()
 
         # update args and print
         args.embed_num = len(text_field.vocab)
@@ -125,9 +123,7 @@ for avg_iter in range(args.num_avg):
         # model
         print('\nDefining model ...')
         cnn = model.CNN_Text(args)
-        #if args.snapshot is not None:
-        #    print('\nLoading model from {}...'.format(args.snapshot))
-        #    cnn.load_state_dict(torch.load(args.snapshot, map_location='cpu'))
+
 
         if args.cuda:
             torch.cuda.set_device(args.device)
@@ -136,12 +132,13 @@ for avg_iter in range(args.num_avg):
         # training model, reporting results, model set to train() and eval() in the functions 
         train.train(train_iter, val_iter, cnn, args)
         acc, loss = train.evaluate(val_iter, cnn, args)
-        helpers.write_result(filename, 'a', [len(train_set), loss, acc.cpu().numpy()], args)
+        helpers.write_result(filename, 'a', [len(train_set), loss, acc.cpu().numpy(), total], args)
         
         # active learning
-        train.al(test_set, train_df, test_df, cnn, al_iter, args)
+        total = train.al(test_set, train_df, test_df, cnn, al_iter, args)
         
-    print('\nDone with run {} of active learning with {}.\n'.format(avg_iter, args.method))
+    print('\nDone with run {} of active learning with {}. Results are stored in {}.\n'.format(avg_iter, args.method, args.datapath))
+
         
         
-print('\nDone with {} runs of {} active learning loops with {}.\n'.format(args.num_avg, args.rounds, args.method))
+print('\nDone with {} runs of {} active learning loops with {}. Results are stored in {}.\n'.format(args.num_avg, args.rounds, args.method, args.datapath))
