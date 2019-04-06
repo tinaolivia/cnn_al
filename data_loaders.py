@@ -30,26 +30,11 @@ def news(path, text_field, label_field, args, **kargs):
     
     return trn, train_iter, val, val_iter, tst, test_iter
 
-def imdb(path, text_field, label_field, args, **kargs):
-    datafields = [("text",text_field),("label",label_field)]
-    trn, val, tst = data.TabularDataset.splits(path=path, train='train.csv', validation='val.csv', 
-                                               test='test.csv', format='csv', fields=datafields)
-    text_field.build_vocab(trn)
-    label_field.build_vocab(trn)
-    return trn, val, tst
 
-
-def ag(path, text_field, label_field, args, **kargs):
-    datafields = [("text",text_field), ("label",label_field)]
-    trn, val, tst = data.TabularDataset.splits(path=path, train='train.csv', validation='val.csv', 
-                                               test='test.csv', format='csv', fields=datafields)    
-    text_field.build_vocab(trn)
-    label_field.build_vocab(trn)    
-    return trn, val, tst
-
-
-def ds_loader(path, datafields, args):
-    trn, val, tst = data.TabularDataset.splits(path=path, train='train.csv', validation='val.csv', test='test.csv', fields=datafields)
+def ds_loader(path, text_field, label_field, args):
+    datafields = [("text", text_field), ("label", label_field)]
+    trn, val, tst = data.TabularDataset.splits(path=path, train='train.csv', validation='val.csv', test='test.csv',
+                                               format='csv', fields=datafields)
     text_field.build_vocab(trn)
     label_field.build_vocab(trn)
     return trn, val, tst

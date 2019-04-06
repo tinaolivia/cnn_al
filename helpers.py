@@ -2,10 +2,8 @@
 import torch
 import torch.autograd as autograd
 import csv
-from sklearn.cluster import KMeans
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
-import numpy as np
 
 def get_feature(data, text_field, args):
     '''
@@ -56,7 +54,7 @@ def get_preds(batch, model, act_func, args):
         dim: dimension of output (batch_size, class_num, num_preds)
     '''
     feature = batch.text.cuda()
-    feature.data.t_()
+    #feature.data.t_()
     logit = act_func(model(feature))
     return logit
         

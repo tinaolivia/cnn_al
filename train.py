@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import torch
 import torch.autograd as autograd
 import torch.nn as nn
@@ -64,6 +65,8 @@ def al(test_iter, train_df, test_df, model, al_iter, args):
     # defining activation functions
     log_softmax = nn.LogSoftmax(dim=1).cuda()
     softmax = nn.Softmax(dim=1).cuda()
+    
+    start = time.time()
         
     # querying instances
     if args.method == 'random':
@@ -79,6 +82,10 @@ def al(test_iter, train_df, test_df, model, al_iter, args):
     elif args.method == 'margin':
         subset, total = methods.margin(test_iter, model, softmax, args, df=test_df['text'])
         print('\nIter {}, selected {} instances according to margin sampling, total margin {}.\n'.format(al_iter, len(subset), total))
+        
+    elif args.method == 'variation_ratio':
+        subset, total = methods.variation_ratio(test_iter, model, softmax, args, df=test_df['text'])
+        print('\nIter {}, selected {} instances according to maximum variation ratio, total variation ratio {}.\n'.format(al_iter, len(subset), total))        
         
     elif args.method == 'dropout_variability':
         subset, total = methods.dropout_variability(test_iter, model, softmax, args, df=test_df['text'])
@@ -99,6 +106,8 @@ def al(test_iter, train_df, test_df, model, al_iter, args):
         print('No implemented method selected.')
         sys.exit()
         
+    end = time.time()
+        
     # adding randomness 
     if args.method != 'random' and args.randomness > 0:
         print('\nInitial subset: {}'.format(subset))
@@ -110,7 +119,7 @@ def al(test_iter, train_df, test_df, model, al_iter, args):
     print('\nSubset: {}\n'.format(subset))
     print('\nUpdating datasets ...\n')
     helpers.update_datasets(args.datapath, train_df, test_df, subset, args)
-    return total
+    return total, (end-start)
 
 
 def evaluate(data_iter, model, args):
