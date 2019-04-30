@@ -33,7 +33,7 @@ parser.add_argument('-result-path', type=str, default='results', help='where to 
 # data 
 parser.add_argument('-shuffle', action='store_true', default=False, help='shuffle the data every epoch')
 parser.add_argument('-dataset', type=str, default='imdb', choices=['imdb', 'ag'], help='dataset [default: imdb]')
-parser.add_argument('-data-path', type=str, default='data', help='path to where data is stored [default: data]')
+parser.add_argument('-data-path', type=str, default='data', help='path to where data is stored [default: data/<dataset>]')
 # model
 parser.add_argument('-dropout', type=float, default=0.5, help='the probability for dropout [default: 0.5]')
 parser.add_argument('-max-norm', type=float, default=3.0, help='l2 constraint of parameters [default: 3.0]')
@@ -48,16 +48,14 @@ parser.add_argument('-no-cuda', action='store_true', default=False, help='disabl
 parser.add_argument('-snapshot', type=str, default=None, help='filename of model snapshot [default: None]')
 # active learning 
 parser.add_argument('-method', type=str, default=None, help='active learning query strategy [default: None]')
-parser.add_argument('-rounds', type=int, default=500, help='rounds of active querying [default: 500]')
+parser.add_argument('-rounds', type=int, default=100, help='rounds of active querying [default: 100]')
 parser.add_argument('-inc', type=int, default=1, help='number of instances added to training data at each round [default: 1]')
 parser.add_argument('-num-preds', type=int, default=5, help='number of predictions made when computing dropout uncertainty [default:5]')
 #parser.add_argument('-test-method', action='store_true', default=False, help='testing active learning method [default: False]')
 parser.add_argument('-criterion', type=float, default=100, help='stopping criterion, accuracy [default:100]')
-parser.add_argument('-test-inc', type=bool, default=False, help='testing number of instances added')
-parser.add_argument('-test-preds', type=bool, default=False, help='testing number of predictions (dropout, vote entropy)')
-parser.add_argument('-hist', type=bool, default=False, help='whether to make a uncertainty histogram')
 parser.add_argument('-cluster', type=bool, default=False, help='whether to cluster the data or not [default:False]')
 parser.add_argument('-randomness', type=float, default=0, help='percentage of randomness when selecting instances [default: 0]')
+#parser.add_argument('-al-bs', type=int, default=16, help='batch size for active learning loops [default: 16]')
 args = parser.parse_args()
 
 # defining additional arguments
@@ -80,6 +78,7 @@ os.makedirs(os.path.join(args.data_path, args.dataset, args.now))
 # copying validation set to new path
 val_df = pd.read_csv('{}/{}/val.csv'.format(args.data_path, args.dataset), header=None, names=['text', 'label'])
 val_df.to_csv('{}/{}/{}/val.csv'.format(args.data_path, args.dataset, args.now), header=False, index=False)
+del val_df
 
 for avg_iter in range(args.num_avg):
     
@@ -89,36 +88,39 @@ for avg_iter in range(args.num_avg):
     args.datapath = os.path.join(args.data_path, args.dataset)
     
     filename = os.path.join(args.result_path, '{}_{}_{}.csv'.format(args.method, args.dataset, avg_iter))
-    helpers.write_result(filename, 'w', ['Train Size', 'loss', 'accuracy', 'total {}'.format(args.dataset), 'time'], args)
+    helpers.write_result(filename, 'w', ['Train Size', 'loss', 'accuracy', 'total {}'.format(args.method), 'time'], args)
     total = 0
     time = 0
     
     for al_iter in range(args.rounds):
     
         # defining text and label fields
-        text_field = data.Field(lower=True)
+        text_field = data.Field(lower=True)#, init_token='<bos>', eos_token='<eos>', tokenize="spacy")
         label_field = data.Field(sequential=False)
 
         # load data
         print('\nLoading {} data ...\n'.format(args.dataset))
-        train_set, val_set, test_set = data_loaders.ds_loader(args.datapath, text_field, label_field, args)
+        train_set, val_set, test_set = data_loaders.ds_loader(text_field, label_field, args)
+        text_field.build_vocab(train_set)
+        label_field.build_vocab(train_set)
+        args.train_size, args.val_size, args.test_size = len(train_set), len(val_set), len(test_set) # sizes
         train_iter = data.BucketIterator(train_set, batch_size=args.batch_size, device=torch.device('cpu'), repeat=False)
         val_iter = data.BucketIterator(val_set, batch_size=args.batch_size, device=torch.device('cpu'), repeat=False)
-        test_iter = data.Iterator(test_set, batch_size=args.batch_size, train=False, shuffle=False, sort=False, sort_within_batch=False,  device=torch.device('cpu'), repeat=False)
+        #test_iter = data.Iterator(test_set, batch_size=args.al_bs, train=False, shuffle=False, sort=False, sort_within_batch=False,  device=torch.device('cpu'), repeat=False)
+        del train_set, val_set #, test_set
         train_df = pd.read_csv('{}/train.csv'.format(args.datapath), header=None, names=['text', 'label'])
         test_df = pd.read_csv('{}/test.csv'.format(args.datapath), header=None, names=['text', 'label'])
-
 
         # update args and print
         args.embed_num = len(text_field.vocab)
         args.class_num = len(label_field.vocab) - 1
-        # setting datapath to updated datasets
-        args.datapath = os.path.join(args.data_path, args.dataset, args.now) #updated dataset in new folder
+        # updating datapath for later
+        if al_iter == 0: args.datapath = os.path.join(args.data_path, args.dataset, args.now)
 
 
-        print("\nParameters:")
-        for attr, value in sorted(args.__dict__.items()):
-            print("\t{}={}".format(attr.upper(), value))
+        #print("\nParameters:")
+        #for attr, value in sorted(args.__dict__.items()):
+        #    print("\t{}={}".format(attr.upper(), value))
     
         # model
         print('\nDefining model ...')
@@ -132,10 +134,12 @@ for avg_iter in range(args.num_avg):
         # training model, reporting results, model set to train() and eval() in the functions 
         train.train(train_iter, val_iter, cnn, args)
         acc, loss = train.evaluate(val_iter, cnn, args)
-        helpers.write_result(filename, 'a', [len(train_set), loss, acc, total, time], args)
+        helpers.write_result(filename, 'a', [args.train_size, loss, acc, total, time], args)
         
         # active learning
-        total, time = train.al(test_iter, train_df, test_df, cnn, al_iter, args)
+        total, time = train.al(test_set, test_df, train_df, cnn, al_iter, args)
+        
+
         
     print('\nDone with run {} of active learning with {}. Results are stored in {}.\n'.format(avg_iter, args.method, args.datapath))
 

@@ -34,7 +34,7 @@ class CNN_Text(nn.Module):
         return x
     
     def forward(self, x):
-        x = self.embed(x)  # (N, W, D)
+        x = self.embed(x) # (N, W, D)
         
         if self.args.static:
             x = Variable(x)

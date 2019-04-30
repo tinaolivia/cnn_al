@@ -5,61 +5,36 @@ import csv
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.feature_extraction.text import TfidfVectorizer
 
-def get_feature(data, text_field, args):
+def get_single_probs(data_ex, text_field, model, act_func, args):
     '''
         input:
-        data: data sample
-        text_field: torchtext.data Field object
+        data_ex: single data example
+        text_field: text field
+        model: trained model
+        act_func: activation function
     '''
-    feature = data.text
+    feature = data_ex.text
     feature = [[text_field.vocab.stoi[x] for x in feature]]
-    if len(feature[0]) < 1: 
-        feature = torch.tensor([float('nan')])
-    else: 
-        feature = torch.tensor(feature)
-        if feature.shape[1] < max(args.kernel_sizes):
-            feature = torch.cat((feature, torch.zeros((1, max(args.kernel_sizes)-feature.shape[1]),dtype=torch.long)), dim=1)
-            with torch.no_grad(): feature = autograd.Variable(feature)
-            if args.cuda: feature = feature.cuda()
-    return feature
-
-def get_output(data, text_field, model, args):
-    '''
-        input:
-        data: data sample
-        text_field: torchtext.data Field object
-        model: model to predict data label
-    '''
-    model.eval()
-    feature = data.text
-    feature = [[text_field.vocab.stoi[x] for x in feature]]
-    if len(feature[0]) < 1: logit = torch.tensor([float('nan')])
-    else:
-        feature = torch.tensor(feature)
-        if feature.shape[1] < max(args.kernel_sizes): 
-            feature = torch.cat((feature, torch.zeros((1,max(args.kernel_sizes)-feature.shape[1]),dtype=torch.long)), dim=1)
-        with torch.no_grad(): feature = autograd.Variable(feature)
-        if args.cuda:
-            feature = feature.cuda()
-        
-        logit = model(feature)
-
+    feature = torch.tensor(feature).cuda()
+    if feature.shape[1] < max(args.kernel_sizes):
+        feature = torch.cat((feature, torch.zeros((1, max(args.kernel_sizes)-feature.shape[1]), dtype=torch.long).cuda()), dim=1).cuda()
+    with torch.no_grad(): feature = autograd.Variable(feature).cuda()
+    logit = act_func(model(feature))
     return logit
 
-def get_preds(batch, model, act_func, args):
+def get_probs(batch, text_field, model, act_func, args):
     '''
         input:
         data_iter: iterator object (not bucketiterator)
         model: trained model for classification, set to eval() or train() outside
         dim: dimension of output (batch_size, class_num, num_preds)
     '''
-    feature = batch.text.cuda()
+    text_field.pad(batch.text)
+    feature = batch.text.cuda() 
     #feature.data.t_()
     logit = act_func(model(feature))
     return logit
         
-
-
 def update_datasets(path, train_df, test_df, subset, args):
     '''
         input:
@@ -86,7 +61,6 @@ def randomness(subset, range_, args):
                 temp = int(torch.randint(high=range_, size=(1,)))
             subset[i] = temp
     return subset
-
     
 def clustering(data, args):
     '''

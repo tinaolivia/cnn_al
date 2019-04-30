@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import pandas as pd
 import torch
 import torch.autograd as autograd
 import torch.nn as nn
@@ -60,58 +61,58 @@ def train(train_iter, dev_iter, model, args):
     dev_acc, dev_loss = evaluate(dev_iter, model, args)
     save(model, args.save_dir, 'snapshot', steps)
     
-def al(test_iter, train_df, test_df, model, al_iter, args):
+def al(test_set, test_df, train_df, model, al_iter, args):
 
     # defining activation functions
     log_softmax = nn.LogSoftmax(dim=1).cuda()
-    softmax = nn.Softmax(dim=1).cuda()
-    
+    softmax = nn.Softmax(dim=1).cuda() 
+
     start = time.time()
         
     # querying instances
     if args.method == 'random':
-        if args.clustering: subset = methods.random_w_clustering(len(test_df['label']), test_df['text'], args)
-        else: subset = methods.random(len(test_df['label']), args)
+        if args.cluster: subset = methods.random_w_clustering(test_df['text'], args)
+        else: subset = methods.random(args)
         total = 0
         print('\nIter {}, selected {} instances at random.\n'.format(al_iter, len(subset)))
     
     elif args.method == 'entropy':
-        subset, total = methods.entropy(test_iter, model, log_softmax, args, df=test_df['text'])
+        subset, total = methods.entropy(test_set, model, log_softmax, args, df=test_df)
         print('\nIter {}, selected {} instances according to entropy uncertainty, total entropy {}.\n'.format(al_iter, len(subset), total))
         
     elif args.method == 'margin':
-        subset, total = methods.margin(test_iter, model, softmax, args, df=test_df['text'])
+        subset, total = methods.margin(test_set, model, softmax, args, df=test_df)
         print('\nIter {}, selected {} instances according to margin sampling, total margin {}.\n'.format(al_iter, len(subset), total))
         
     elif args.method == 'variation_ratio':
-        subset, total = methods.variation_ratio(test_iter, model, softmax, args, df=test_df['text'])
+        subset, total = methods.variation_ratio(test_set, model, softmax, args, df=test_df)
         print('\nIter {}, selected {} instances according to maximum variation ratio, total variation ratio {}.\n'.format(al_iter, len(subset), total))        
         
     elif args.method == 'dropout_variability':
-        subset, total = methods.dropout_variability(test_iter, model, softmax, args, df=test_df['text'])
+        subset, total = methods.dropout_variability(test_set, model, softmax, args, df=test_df)
         print('\nIter {}, selected {} instances according to dropout variability, total variance {}.\n'.format(al_iter, len(subset), total))
     
-    elif args.metod == 'dropout_entropy':
-        subset, total = methods.dropout_entropy(test_iter, model, softmax, args, df=test_df['text'])
+    elif args.method == 'dropout_entropy':
+        subset, total = methods.dropout_entropy(test_set, model, softmax, args, df=test_df)
         print('\nIter {}, selected {} instances according to dropout entropy, total entropy {}.\n'.format(al_iter, len(subset), total))
         
     elif args.method == 'dropout_margin':
-        subset, total = methods.dropout_margin(test_iter, model, softmax, args, df=test_df['text'])
+        subset, total = methods.dropout_margin(test_set, model, softmax, args, df=test_df)
         
     elif args.method == 'dropout_variation_ratio':
-        subset, total = methods.dropout_variation(test_iter, model, softmax, args, df=test_df['text'])
+        subset, total = methods.dropout_variation(test_set, model, softmax, args, df=test_df)
         print('\nIter {}, selected {} instances according to dropout maximum variation ratios, total variation ratio {}.\n'.format(al_iter, len(subset), total))
     
     else:
         print('No implemented method selected.')
         sys.exit()
-        
+            
     end = time.time()
         
     # adding randomness 
     if args.method != 'random' and args.randomness > 0:
         print('\nInitial subset: {}'.format(subset))
-        subset = helpers.randomness(subset, len(test_df['label']), args)
+        subset = helpers.randomness(subset, args.test_size, args)
         print('\nUpdated subset: {}'.format(subset))
 
         
