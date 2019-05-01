@@ -37,7 +37,7 @@ def entropy(data, model, log_softmax, args, df=None):
         df: dataframe of dataset
     '''
     model.eval()
-    if args.cluster and (df is not None): kmeans = helpers.clustering(df['text'], args) 
+    if args.cluster and (df is not None): kmeans = helpers.clustering(df['text'], args)
     top_e = -torch.ones(args.inc).cuda()
     top_ind = torch.empty(args.inc).cuda()
     text_field = data.fields['text']
@@ -53,6 +53,9 @@ def entropy(data, model, log_softmax, args, df=None):
                 top_e[idx], top_ind[idx] = entropy_, i
         
     subset = list(top_ind.cpu().numpy())
+    if args.cluster:
+        for i in range(len(subset)):
+            subset[i] = int(subset[i])
     return subset, top_e.cpu().detach().numpy().sum()
 
 
@@ -82,6 +85,9 @@ def margin(data, model, softmax, args, df=None):
                 top_m[idx], top_ind[idx] = margin_, i
                 
     subset = list(top_ind.cpu().numpy())
+    if args.cluster:
+        for i in range(len(subset)):
+            subset[i] = int(subset[i])
     return subset, top_m.cpu().detach().numpy().sum()
         
 
@@ -95,7 +101,14 @@ def variation_ratio(data, model, softmax, args, df = None):
         df: dataframe of dataset
     '''
     model.eval()
-    if args.cluster and (df is not None): kmeans = helpers.clustering(df['text'], args)
+    if args.cluster and (df is not None):
+        kmeans = helpers.clustering(df['text'], args)
+        test_k = kmeans.cpu().detach().numpy()
+        for i in range(args.inc):
+            for j in range(len(data)):
+                if test_k[j] == i:
+                    print(i, 'check')
+                    break
     top_var = -torch.ones(args.inc).cuda()
     top_ind = torch.empty(args.inc).cuda()
     text_field = data.fields['text']
@@ -109,8 +122,11 @@ def variation_ratio(data, model, softmax, args, df = None):
             if var > top_var.min():
                 min_var, idx = torch.min(top_var, dim=0)
                 top_var[idx], top_ind[idx] = var, i
-    
+
     subset = list(top_ind.cpu().numpy())
+    if args.cluster:
+        for i in range(len(subset)):
+            subset[i] = int(subset[i])
     return subset, top_var.cpu().detach().numpy().sum()
                 
 #--------------------------------------------------------------------------------------------------
@@ -145,6 +161,9 @@ def dropout_variability(data, model, softmax, args, df=None):
     
     model.eval()            
     subset = list(top_ind.cpu().numpy())
+    if args.cluster:
+        for i in range(len(subset)):
+            subset[i] = int(subset[i])
     return subset, top_var.cpu().detach().numpy().sum()
     
 
@@ -177,6 +196,9 @@ def dropout_entropy(data, model, softmax, args, df=None):
                 
     model.eval()
     subset = list(top_ind.cpu().numpy())
+    if args.cluster:
+        for i in range(len(subset)):
+            subset[i] = int(subset[i])
     return subset, top_e.cpu().detach().numpy().sum()
 
 def dropout_margin(data, model, softmax, args, df=None):
@@ -208,6 +230,9 @@ def dropout_margin(data, model, softmax, args, df=None):
                 
     model.eval()
     subset = list(top_ind.cpu().numpy())
+    if args.cluster:
+        for i in range(len(subset)):
+            subset[i] = int(subset[i])
     return subset, top_m.cpu().detach().numpy().sum()
 
 def dropout_variation(data, model, softmax, args, df=None):
@@ -238,5 +263,8 @@ def dropout_variation(data, model, softmax, args, df=None):
                 
     model.eval()
     subset = list(top_ind.cpu().numpy())
+    if args.cluster:
+        for i in range(len(subset)):
+            subset[i] = int(subset[i])
     return subset, top_var.cpu().detach().numpy().sum()
         
