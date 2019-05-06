@@ -6,6 +6,7 @@ import torch
 import torchtext.data as data
 import csv
 import sys
+import time
 import pandas as pd
 
 import model
@@ -88,9 +89,9 @@ for avg_iter in range(args.num_avg):
     args.datapath = os.path.join(args.data_path, args.dataset)
     
     filename = os.path.join(args.result_path, '{}_{}_{}.csv'.format(args.method, args.dataset, avg_iter))
-    helpers.write_result(filename, 'w', ['Train Size', 'loss', 'accuracy', 'total {}'.format(args.method), 'time'], args)
+    helpers.write_result(filename, 'w', ['Train Size', 'loss', 'accuracy', 'total {}'.format(args.method), 'al time', 'train time'], args)
     total = 0
-    time = 0
+    time_ = 0
     
     for al_iter in range(args.rounds):
     
@@ -131,13 +132,16 @@ for avg_iter in range(args.num_avg):
             torch.cuda.set_device(args.device)
             cnn = cnn.cuda()
             
-        # training model, reporting results, model set to train() and eval() in the functions 
+        # training model, reporting results, model set to train() and eval() in the functions
+        
+        start = time.time()
         train.train(train_iter, val_iter, cnn, args)
+        end = time.time()
         acc, loss = train.evaluate(val_iter, cnn, args)
-        helpers.write_result(filename, 'a', [args.train_size, loss, acc, total, time], args)
+        helpers.write_result(filename, 'a', [args.train_size, loss, acc, total, time_, (end-start)], args)
         
         # active learning
-        total, time = train.al(test_set, test_df, train_df, cnn, al_iter, args)
+        total, time_ = train.al(test_set, test_df, train_df, cnn, al_iter, args)
         
 
         
