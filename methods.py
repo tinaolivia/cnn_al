@@ -12,22 +12,6 @@ def random(args):
     subset = list(random_perm[:args.inc].numpy())
     return subset
 
-def random_w_clustering(df, args):
-    '''
-        input:
-        data_size: size of dataset
-        df: dataframe with raw text documents
-    '''
-    subset=[]
-    kmeans = helpers.clustering(df, args)
-    random_perm = torch.randperm(args.test_size)
-    for i in range(args.inc):
-        for j in range(args.test_size):
-            if kmeans[random_perm[j]] == i:
-                subset.append(random_perm[j])
-                break
-    return subset
-
 def entropy(data, model, log_softmax, args, df=None):
     '''
         input:
